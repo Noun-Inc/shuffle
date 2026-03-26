@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Star } from "lucide-react";
+import { thumbUrl } from "@/lib/thumbUrl";
 import type { Signal } from "@/data/signals";
 
 interface CardThumbnailProps {
@@ -29,8 +30,10 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
       <div className="aspect-[5/7] rounded-lg overflow-hidden bg-gray-100 shadow-sm hover:shadow-md transition-shadow relative">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={signal.images[0]?.url}
+          src={thumbUrl(signal.images[0]?.url)}
           alt={signal.title}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover"
         />
         {/* Number badge */}

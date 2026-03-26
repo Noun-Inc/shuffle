@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { X, Star, MessageSquare, ExternalLink } from "lucide-react";
+import { X, Star, MessageSquare, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import ImageSlideshow from "./ImageSlideshow";
 import type { Signal } from "@/data/signals";
 
@@ -13,6 +13,10 @@ interface CardDetailProps {
   onToggleStar?: () => void;
   comment?: string;
   onCommentChange?: (text: string) => void;
+  onNext?: () => void;
+  onPrev?: () => void;
+  hasNext?: boolean;
+  hasPrev?: boolean;
 }
 
 export default function CardDetail({
@@ -22,6 +26,10 @@ export default function CardDetail({
   onToggleStar,
   comment = "",
   onCommentChange,
+  onNext,
+  onPrev,
+  hasNext = false,
+  hasPrev = false,
 }: CardDetailProps) {
   const [showMemo, setShowMemo] = useState(!!comment);
 
@@ -43,31 +51,43 @@ export default function CardDetail({
       >
         {/* Left: Content */}
         <div className="flex-1 p-6 md:p-8 overflow-y-auto">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={onToggleStar}
+              className="p-1.5 rounded-full hover:bg-yellow-50 transition-colors"
+            >
+              <Star
+                size={20}
+                className={
+                  isStarred
+                    ? "fill-yellow-400 text-yellow-400"
+                    : "text-gray-300"
+                }
+              />
+            </button>
+
+            {/* Navigation — always centered */}
+            <div className="flex items-center gap-2 text-sm">
               <button
-                onClick={onToggleStar}
-                className="p-1.5 rounded-full hover:bg-yellow-50 transition-colors"
+                onClick={hasPrev ? onPrev : undefined}
+                className={`p-1 rounded-full transition-colors ${hasPrev ? "text-gray-400 hover:bg-gray-100 hover:text-gray-600" : "text-gray-200 cursor-default"}`}
+                disabled={!hasPrev}
               >
-                <Star
-                  size={20}
-                  className={
-                    isStarred
-                      ? "fill-yellow-400 text-yellow-400"
-                      : "text-gray-300"
-                  }
-                />
+                <ChevronLeft size={18} />
               </button>
+              <span className="font-medium text-gray-400 min-w-[2.5rem] text-center">#{signal.number}</span>
               <button
-                onClick={onClose}
-                className="p-1.5 rounded-full hover:bg-gray-100 transition-colors md:hidden"
+                onClick={hasNext ? onNext : undefined}
+                className={`p-1 rounded-full transition-colors ${hasNext ? "text-gray-400 hover:bg-gray-100 hover:text-gray-600" : "text-gray-200 cursor-default"}`}
+                disabled={!hasNext}
               >
-                <X size={20} className="text-gray-400" />
+                <ChevronRight size={18} />
               </button>
             </div>
+
             <button
               onClick={onClose}
-              className="hidden md:block p-1.5 rounded-full hover:bg-gray-100 transition-colors"
+              className="p-1.5 rounded-full hover:bg-gray-100 transition-colors"
             >
               <X size={20} className="text-gray-400" />
             </button>

@@ -127,7 +127,10 @@ export default function Home() {
 
       <ShuffleOverlay
         isActive={isShuffling}
-        cardImages={signals.map((s) => s.images[0]?.url).filter(Boolean)}
+        cardImages={signals.map((s) => {
+          const url = s.images[0]?.url;
+          return url?.replace(/^\/images\//, "/thumbs/").replace(/\.(png|jpg|jpeg|webp)$/i, ".jpg") || "";
+        }).filter(Boolean)}
         dealTargets={dealTargets}
       />
 
@@ -142,6 +145,16 @@ export default function Home() {
               onToggleStar={() => userData.toggleStar(selectedCard.id)}
               comment={userData.getComment(selectedCard.id)}
               onCommentChange={(text) => userData.setComment(selectedCard.id, text)}
+              hasNext={filteredSignals.indexOf(selectedCard) < filteredSignals.length - 1}
+              hasPrev={filteredSignals.indexOf(selectedCard) > 0}
+              onNext={() => {
+                const idx = filteredSignals.indexOf(selectedCard);
+                if (idx < filteredSignals.length - 1) setSelectedCard(filteredSignals[idx + 1]);
+              }}
+              onPrev={() => {
+                const idx = filteredSignals.indexOf(selectedCard);
+                if (idx > 0) setSelectedCard(filteredSignals[idx - 1]);
+              }}
             />
           ) : (
             <CardDetail
@@ -152,6 +165,16 @@ export default function Home() {
               onToggleStar={() => userData.toggleStar(selectedCard.id)}
               comment={userData.getComment(selectedCard.id)}
               onCommentChange={(text) => userData.setComment(selectedCard.id, text)}
+              hasNext={filteredSignals.indexOf(selectedCard) < filteredSignals.length - 1}
+              hasPrev={filteredSignals.indexOf(selectedCard) > 0}
+              onNext={() => {
+                const idx = filteredSignals.indexOf(selectedCard);
+                if (idx < filteredSignals.length - 1) setSelectedCard(filteredSignals[idx + 1]);
+              }}
+              onPrev={() => {
+                const idx = filteredSignals.indexOf(selectedCard);
+                if (idx > 0) setSelectedCard(filteredSignals[idx - 1]);
+              }}
             />
           ))}
       </AnimatePresence>
