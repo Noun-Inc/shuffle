@@ -15,6 +15,8 @@ export interface Signal {
   tags?: string[];
   year: number;
   reference?: string;
+  /** Manual crop hint: "contain" for infographics, or CSS object-position like "25% 50%" */
+  focalHint?: string;
 }
 
 export const signals: Signal[] = [
@@ -718,6 +720,7 @@ export const signals: Signal[] = [
     category: "Health & Wellness",
     year: 2026,
     reference: "https://krai.pasco.k12.fl.us/",
+    focalHint: "50% 85%",
   },
   {
     id: 55,
@@ -768,6 +771,7 @@ export const signals: Signal[] = [
     category: "Technology",
     year: 2026,
     reference: "https://www.fastcompany.com/91196922/two-big-future-of-work-trends-are-about-to-collide",
+    focalHint: "contain",
   },
   {
     id: 59,
@@ -996,6 +1000,7 @@ export const signals: Signal[] = [
     category: "Fashion & Materials",
     year: 2026,
     reference: "https://www.fastcompany.com/91336535/onward-medical-world-changing-ideas-2025",
+    focalHint: "25% 50%",
   },
   {
     id: 77,
@@ -1020,6 +1025,7 @@ export const signals: Signal[] = [
     category: "Urban & Mobility",
     year: 2026,
     reference: "https://www.voltpost.com/",
+    focalHint: "50% 40%",
   },
   {
     id: 79,

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Star } from "lucide-react";
 import { thumbUrl } from "@/lib/thumbUrl";
+import { detectFocalPoint } from "@/lib/focalPoint";
 import type { Signal } from "@/data/signals";
 
 interface CardThumbnailProps {
@@ -54,8 +55,10 @@ function sampleBrightness(
 export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbnailProps) {
   const [hovered, setHovered] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
-  const [hashColor, setHashColor] = useState("rgba(255,255,255,0.8)");
-  const [numColor, setNumColor] = useState("rgba(255,255,255,0.8)");
+  const [hashColor, setHashColor] = useState("#ffffff");
+  const [numColor, setNumColor] = useState("#ffffff");
+  const [focalPoint, setFocalPoint] = useState("center center");
+  const [useContain, setUseContain] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
@@ -70,7 +73,7 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  const analyzeBrightness = useCallback(() => {
+  const analyzeImage = useCallback(() => {
     const img = imgRef.current;
     if (!img || !img.naturalWidth) return;
 
@@ -83,7 +86,22 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
     const threshold = 140;
     setHashColor(leftBrightness > threshold ? "#3a3a3a" : "#ffffff");
     setNumColor(rightBrightness > threshold ? "#3a3a3a" : "#ffffff");
-  }, []);
+
+    // Use manual hint if provided, otherwise auto-detect
+    if (signal.focalHint) {
+      if (signal.focalHint === "contain") {
+        setUseContain(true);
+        setFocalPoint("center center");
+      } else {
+        setFocalPoint(signal.focalHint);
+        setUseContain(false);
+      }
+    } else {
+      const result = detectFocalPoint(img);
+      setFocalPoint(result.objectPosition);
+      setUseContain(result.useContain);
+    }
+  }, [signal.focalHint]);
 
   const showTitle = hovered || isTouch;
 
@@ -108,12 +126,13 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
           loading="lazy"
           decoding="async"
           crossOrigin="anonymous"
-          onLoad={analyzeBrightness}
-          className="w-full h-full object-cover transition-[filter] duration-500 ease-out"
+          onLoad={analyzeImage}
+          className={`w-full h-full transition-[filter] duration-500 ease-out ${useContain ? "object-contain" : "object-cover"}`}
           style={{
             filter: hovered
               ? "grayscale(0%) contrast(1.05) brightness(1)"
               : "grayscale(100%) contrast(1.15) brightness(0.95)",
+            objectPosition: focalPoint,
           }}
         />
 
