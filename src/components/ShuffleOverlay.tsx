@@ -267,6 +267,16 @@ export default function ShuffleOverlay({
                       src={card.img}
                       alt=""
                       className="w-full h-full object-cover"
+                      style={{ filter: "grayscale(100%) contrast(1.5) brightness(0.9)" }}
+                    />
+                    <div
+                      className="absolute inset-0 pointer-events-none"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='discrete' tableValues='0 0.4 0.7 1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E")`,
+                        backgroundSize: "100px 100px",
+                        mixBlendMode: "multiply" as const,
+                        opacity: 0.7,
+                      }}
                     />
                     <div className="absolute inset-0 rounded-lg ring-1 ring-black/10" />
                   </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Star } from "lucide-react";
 import { thumbUrl } from "@/lib/thumbUrl";
@@ -12,8 +12,74 @@ interface CardThumbnailProps {
   isStarred?: boolean;
 }
 
+// Coarse, newspaper-like grain
+const GRAIN_SVG = `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='discrete' tableValues='0 0.4 0.7 1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E")`;
+
+/** Sample average brightness of a region in an image (0=black, 255=white) */
+function sampleBrightness(
+  img: HTMLImageElement,
+  xFrac: number,
+  yFrac: number,
+  sizeFrac: number
+): number {
+  try {
+    const canvas = document.createElement("canvas");
+    const size = 16;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return 128;
+
+    const sx = img.naturalWidth * xFrac;
+    const sy = img.naturalHeight * yFrac;
+    const sw = img.naturalWidth * sizeFrac;
+    const sh = img.naturalHeight * sizeFrac;
+
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
+    const data = ctx.getImageData(0, 0, size, size).data;
+
+    let total = 0;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      // Luminance: 0.299R + 0.587G + 0.114B
+      total += data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      count++;
+    }
+    return count > 0 ? total / count : 128;
+  } catch {
+    return 128;
+  }
+}
+
 export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbnailProps) {
   const [hovered, setHovered] = useState(false);
+  const [isTouch, setIsTouch] = useState(false);
+  const [hashColor, setHashColor] = useState("rgba(255,255,255,0.8)");
+  const [numColor, setNumColor] = useState("rgba(255,255,255,0.8)");
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    const noHover = window.matchMedia("(hover: none)").matches;
+    const touch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    setIsTouch(noHover || touch);
+  }, []);
+
+  const analyzeBrightness = useCallback(() => {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) return;
+
+    // Sample top-left for # symbol
+    const leftBrightness = sampleBrightness(img, 0, 0, 0.2);
+    // Sample top-right for number
+    const rightBrightness = sampleBrightness(img, 0.7, 0, 0.25);
+
+    // Threshold: if bright region, use dark text; otherwise white
+    const threshold = 140;
+    setHashColor(leftBrightness > threshold ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.8)");
+    setNumColor(rightBrightness > threshold ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.8)");
+  }, []);
+
+  const showTitle = hovered || isTouch;
 
   return (
     <motion.div
@@ -23,27 +89,68 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className="relative cursor-pointer group"
-      whileHover={{ scale: 1.05 }}
+      whileHover={{ scale: 1.03 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
     >
-      {/* Thumbnail card */}
-      <div className="aspect-[5/7] rounded-lg overflow-hidden bg-gray-100 shadow-sm hover:shadow-md transition-shadow relative">
+      <div className="aspect-[5/7] rounded-xl overflow-hidden bg-gray-300 shadow-sm hover:shadow-md transition-shadow relative">
+        {/* B&W high contrast image */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
+          ref={imgRef}
           src={thumbUrl(signal.images[0]?.url)}
           alt={signal.title}
           loading="lazy"
           decoding="async"
+          crossOrigin="anonymous"
+          onLoad={analyzeBrightness}
           className="w-full h-full object-cover"
+          style={{ filter: "grayscale(100%) contrast(1.5) brightness(0.9)" }}
         />
-        {/* Number badge */}
-        <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur-sm text-[10px] font-bold text-gray-700 px-1.5 py-0.5 rounded z-10">
-          #{signal.number}
+
+        {/* Grain noise overlay */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: GRAIN_SVG,
+            backgroundSize: "100px 100px",
+            mixBlendMode: "multiply",
+            opacity: 0.7,
+            zIndex: 5,
+          }}
+        />
+
+        {/* # left, number right — Fraunces regular weight */}
+        <div className="absolute top-0 inset-x-0 flex items-start justify-between px-2.5 pt-2 z-10">
+          <span
+            className="text-xl sm:text-2xl leading-none"
+            style={{
+              fontFamily: "'Fraunces', serif",
+              fontWeight: 400,
+              color: hashColor,
+              textShadow: hashColor.includes("0,0,0") ? "none" : "0 1px 3px rgba(0,0,0,0.4)",
+              transition: "color 0.3s",
+            }}
+          >
+            #
+          </span>
+          <span
+            className="text-3xl sm:text-4xl leading-none"
+            style={{
+              fontFamily: "'Fraunces', serif",
+              fontWeight: 400,
+              color: numColor,
+              textShadow: numColor.includes("0,0,0") ? "none" : "0 1px 3px rgba(0,0,0,0.4)",
+              transition: "color 0.3s",
+            }}
+          >
+            {signal.number}
+          </span>
         </div>
+
         {/* Star indicator */}
         {isStarred && (
-          <div className="absolute top-1.5 right-1.5 z-10">
-            <Star size={12} className="text-amber-400 fill-amber-400 drop-shadow" />
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10">
+            <Star size={14} className="text-amber-400 fill-amber-400 drop-shadow" />
           </div>
         )}
 
@@ -51,19 +158,17 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
         <motion.div
           className="absolute inset-x-0 bottom-0 z-10 pointer-events-none"
           initial={false}
-          animate={hovered ? { opacity: 1 } : { opacity: 0 }}
+          animate={showTitle ? { opacity: 1 } : { opacity: 0 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
         >
-          {/* Dark gradient fade */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/40 to-transparent" />
-          {/* Title text */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
           <motion.div
-            className="relative px-2 pb-2 pt-6"
+            className="relative px-2.5 pb-2.5 pt-8"
             initial={false}
-            animate={hovered ? { y: 0 } : { y: 6 }}
+            animate={showTitle ? { y: 0 } : { y: 6 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
           >
-            <p className="text-lg sm:text-xl font-semibold text-white leading-tight line-clamp-4 drop-shadow-sm">
+            <p className="font-semibold text-white leading-tight line-clamp-4 drop-shadow-sm" style={{ fontSize: "0.8125rem" }}>
               {signal.title}
             </p>
           </motion.div>

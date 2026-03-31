@@ -5,7 +5,8 @@
       "name": "shuffle-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 3000,
+      "port": 3002,
+      "autoPort": true,
       "env": {
         "npm_config_cache": "/tmp/npm-cache-shuffle"
       }
