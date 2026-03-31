@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, type PanInfo } from "framer-motion";
 import { X, Star, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
 import ImageSlideshow from "./ImageSlideshow";
@@ -64,6 +64,14 @@ export default function MobileCardDetail({
       return;
     }
   };
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
 
   return (
     <motion.div

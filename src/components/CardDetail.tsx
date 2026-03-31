@@ -47,6 +47,14 @@ export default function CardDetail({
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
   return (
     <motion.div
       className="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-3 sm:p-4 md:p-6"
