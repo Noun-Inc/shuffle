@@ -13,8 +13,8 @@ interface CardThumbnailProps {
   isStarred?: boolean;
 }
 
-// Coarse, newspaper-like grain
-const GRAIN_SVG = `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='discrete' tableValues='0 0.4 0.7 1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E")`;
+// Heavy newspaper halftone grain — large dots, high contrast
+const GRAIN_SVG = `url("data:image/svg+xml,%3Csvg viewBox='0 0 150 150' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='2.2' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='discrete' tableValues='0 0.5 0.8 1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.65'/%3E%3C/svg%3E")`;
 
 /** Sample average brightness of a region in an image (0=black, 255=white) */
 function sampleBrightness(
@@ -131,7 +131,7 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
           style={{
             filter: hovered
               ? "grayscale(0%) contrast(1.05) brightness(1)"
-              : "grayscale(100%) contrast(1.15) brightness(0.95)",
+              : "grayscale(100%) contrast(1.35) brightness(0.92) saturate(0)",
             objectPosition: focalPoint,
           }}
         />
@@ -143,7 +143,7 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
             backgroundImage: GRAIN_SVG,
             backgroundSize: "100px 100px",
             mixBlendMode: "multiply",
-            opacity: hovered ? 0.15 : 0.85,
+            opacity: hovered ? 0.1 : 0.92,
             zIndex: 5,
           }}
         />
@@ -197,7 +197,7 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
             animate={showTitle ? { y: 0 } : { y: 6 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
           >
-            <p className="font-semibold text-white leading-tight line-clamp-4 drop-shadow-sm text-[0.8125rem] sm:text-[1.015rem]">
+            <p className="font-semibold text-white leading-tight line-clamp-4 drop-shadow-sm text-[0.8125rem] sm:text-[1.015rem] md:text-[1.125rem] lg:text-[1.2rem]">
               {signal.title}
             </p>
           </motion.div>
