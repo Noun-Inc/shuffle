@@ -109,18 +109,22 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
           decoding="async"
           crossOrigin="anonymous"
           onLoad={analyzeBrightness}
-          className="w-full h-full object-cover"
-          style={{ filter: "grayscale(100%) contrast(1.15) brightness(0.95)" }}
+          className="w-full h-full object-cover transition-[filter] duration-500 ease-out"
+          style={{
+            filter: hovered
+              ? "grayscale(0%) contrast(1.05) brightness(1)"
+              : "grayscale(100%) contrast(1.15) brightness(0.95)",
+          }}
         />
 
         {/* Grain noise overlay */}
         <div
-          className="absolute inset-0 pointer-events-none"
+          className="absolute inset-0 pointer-events-none transition-opacity duration-500 ease-out"
           style={{
             backgroundImage: GRAIN_SVG,
             backgroundSize: "100px 100px",
             mixBlendMode: "multiply",
-            opacity: 0.85,
+            opacity: hovered ? 0.15 : 0.85,
             zIndex: 5,
           }}
         />
