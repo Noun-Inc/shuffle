@@ -59,9 +59,15 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    const noHover = window.matchMedia("(hover: none)").matches;
-    const touch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-    setIsTouch(noHover || touch);
+    const check = () => {
+      const noHover = window.matchMedia("(hover: none)").matches;
+      const touch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+      const smallScreen = window.innerWidth < 768;
+      setIsTouch(noHover || touch || smallScreen);
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
   }, []);
 
   const analyzeBrightness = useCallback(() => {
@@ -75,8 +81,8 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
 
     // Threshold: if bright region, use dark text; otherwise white
     const threshold = 140;
-    setHashColor(leftBrightness > threshold ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.8)");
-    setNumColor(rightBrightness > threshold ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.8)");
+    setHashColor(leftBrightness > threshold ? "#3a3a3a" : "#ffffff");
+    setNumColor(rightBrightness > threshold ? "#3a3a3a" : "#ffffff");
   }, []);
 
   const showTitle = hovered || isTouch;
@@ -104,7 +110,7 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
           crossOrigin="anonymous"
           onLoad={analyzeBrightness}
           className="w-full h-full object-cover"
-          style={{ filter: "grayscale(100%) contrast(1.5) brightness(0.9)" }}
+          style={{ filter: "grayscale(100%) contrast(1.15) brightness(0.95)" }}
         />
 
         {/* Grain noise overlay */}
@@ -114,7 +120,7 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
             backgroundImage: GRAIN_SVG,
             backgroundSize: "100px 100px",
             mixBlendMode: "multiply",
-            opacity: 0.7,
+            opacity: 0.85,
             zIndex: 5,
           }}
         />
@@ -127,7 +133,7 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
               fontFamily: "'Fraunces', serif",
               fontWeight: 400,
               color: hashColor,
-              textShadow: hashColor.includes("0,0,0") ? "none" : "0 1px 3px rgba(0,0,0,0.4)",
+              textShadow: hashColor === "#3a3a3a" ? "none" : "0 1px 3px rgba(0,0,0,0.5)",
               transition: "color 0.3s",
             }}
           >
@@ -139,7 +145,7 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
               fontFamily: "'Fraunces', serif",
               fontWeight: 400,
               color: numColor,
-              textShadow: numColor.includes("0,0,0") ? "none" : "0 1px 3px rgba(0,0,0,0.4)",
+              textShadow: numColor === "#3a3a3a" ? "none" : "0 1px 3px rgba(0,0,0,0.5)",
               transition: "color 0.3s",
             }}
           >
@@ -168,7 +174,7 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
             animate={showTitle ? { y: 0 } : { y: 6 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
           >
-            <p className="font-semibold text-white leading-tight line-clamp-4 drop-shadow-sm" style={{ fontSize: "0.8125rem" }}>
+            <p className="font-semibold text-white leading-tight line-clamp-4 drop-shadow-sm text-[0.8125rem] sm:text-[1.015rem]">
               {signal.title}
             </p>
           </motion.div>
