@@ -33,9 +33,17 @@ export default function Home() {
   const [loadedSignals, setLoadedSignals] = useState<Signal[]>(fallbackSignals);
   const [loadedCategories, setLoadedCategories] = useState<string[]>(fallbackCategories);
   const [dbLoaded, setDbLoaded] = useState(false);
+  const [newCardId, setNewCardId] = useState<string | null>(null);
 
   // Load signals from Supabase on mount, fall back to static data
   useEffect(() => {
+    // Check if we just published a new card
+    const pendingNewId = sessionStorage.getItem("newSignalId");
+    if (pendingNewId) {
+      sessionStorage.removeItem("newSignalId");
+      setNewCardId(pendingNewId);
+    }
+
     fetchDeckSignals("2026-signals")
       .then(({ signals: dbSignals, categories: dbCats }) => {
         if (dbSignals.length > 0) {
@@ -141,6 +149,7 @@ export default function Home() {
           isShuffling={isShuffling}
           onCardClick={setSelectedCard}
           starredIds={userData.starredIds}
+          newCardId={newCardId}
         />
       )}
 

@@ -130,6 +130,7 @@ export function detectFocalPoint(img: HTMLImageElement): FocalResult {
     }
     // Also catch charts/diagrams: low color variance overall + moderate edges
     const avgColorVar = cells.reduce((a, c) => a + c.colorVariance, 0) / cells.length;
+    const aspectRatio = img.naturalWidth / (img.naturalHeight || 1);
     if (avgColorVar < 600 && textRatio > 0.25 && avgBrightness > 140 && aspectRatio > 1.3) {
       return { objectPosition: "center center", useContain: true };
     }
@@ -141,7 +142,6 @@ export function detectFocalPoint(img: HTMLImageElement): FocalResult {
     }
 
     // --- Wide images without detected split: default to one side ---
-    const aspectRatio = img.naturalWidth / (img.naturalHeight || 1);
     const gridHalf = GRID / 2;
     if (aspectRatio > 1.35 && !splitResult && photoCells.length > 4) {
       // Wide image, no gap detected — likely a side-by-side with no clear divider

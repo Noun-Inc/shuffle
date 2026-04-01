@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import type { SignalImage } from "@/data/signals";
 import { signals, categories } from "@/data/signals";
@@ -84,6 +84,7 @@ function AdminPage() {
   const nextNum = useRef(getNextNumber());
   const deckYear = useRef(getCurrentDeckYear());
   const searchParams = useSearchParams();
+  const router = useRouter();
   const draftId = searchParams.get("draft");
   const { saveDraft, getDraft, publishDraft } = useDrafts();
 
@@ -274,7 +275,7 @@ function AdminPage() {
         });
       }
 
-      await upsertSignal({
+      const saved = await upsertSignal({
         id: typeof editingDraftId === "string" ? editingDraftId : undefined,
         deckSlug: "2026-signals",
         number: nextNum.current,
@@ -286,6 +287,11 @@ function AdminPage() {
         status: "published",
         images: uploadedImages,
       });
+
+      // Store new signal ID so home page can animate it in
+      sessionStorage.setItem("newSignalId", String(saved.id));
+      router.push("/");
+      return;
     } catch (err) {
       console.error("Publish error:", err);
     }
@@ -739,7 +745,7 @@ function AdminPage() {
                 !title
                   ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                   : saving
-                  ? "bg-blue-400 text-white cursor-wait"
+                  ? "bg-blue-500 text-white cursor-wait"
                   : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-lg shadow-blue-600/20"
               }
             `}
@@ -751,7 +757,7 @@ function AdminPage() {
                   transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
                   className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
                 />
-                Saving...
+                Publishing...
               </span>
             ) : savedAs === "published" ? (
               <span className="flex items-center justify-center gap-2">

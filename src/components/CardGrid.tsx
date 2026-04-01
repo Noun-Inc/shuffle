@@ -9,6 +9,7 @@ interface CardGridProps {
   isShuffling: boolean;
   onCardClick: (signal: Signal) => void;
   starredIds?: (string | number)[];
+  newCardId?: string | null;
 }
 
 export default function CardGrid({
@@ -16,6 +17,7 @@ export default function CardGrid({
   isShuffling,
   onCardClick,
   starredIds = [],
+  newCardId = null,
 }: CardGridProps) {
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
@@ -25,23 +27,49 @@ export default function CardGrid({
         transition={{ duration: 0.2 }}
       >
         <AnimatePresence mode="popLayout">
-          {signals.map((signal) => (
-            <motion.div
-              key={signal.id}
-              layout
-              data-grid-cell
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-            >
-              <CardThumbnail
-                signal={signal}
-                onClick={() => onCardClick(signal)}
-                isStarred={starredIds.map(String).includes(String(signal.id))}
-              />
-            </motion.div>
-          ))}
+          {signals.map((signal) => {
+            const isNew = newCardId && String(signal.id) === String(newCardId);
+            return (
+              <motion.div
+                key={signal.id}
+                layout
+                data-grid-cell
+                initial={
+                  isNew
+                    ? { opacity: 0, rotateY: 90, scale: 0.85 }
+                    : { opacity: 0, scale: 0.8 }
+                }
+                animate={{ opacity: 1, rotateY: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={
+                  isNew
+                    ? {
+                        type: "spring",
+                        stiffness: 70,
+                        damping: 16,
+                        delay: 0.25,
+                      }
+                    : { type: "spring", stiffness: 300, damping: 25 }
+                }
+                style={isNew ? { transformPerspective: 700 } : undefined}
+                className="relative"
+              >
+                <CardThumbnail
+                  signal={signal}
+                  onClick={() => onCardClick(signal)}
+                  isStarred={starredIds.map(String).includes(String(signal.id))}
+                />
+                {isNew && (
+                  <motion.div
+                    className="absolute inset-0 rounded-lg ring-2 ring-blue-400 pointer-events-none"
+                    initial={{ opacity: 1 }}
+                    animate={{ opacity: 0 }}
+                    transition={{ delay: 1.2, duration: 1.2 }}
+                  />
+                )}
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       </motion.div>
     </div>

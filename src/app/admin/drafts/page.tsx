@@ -76,7 +76,7 @@ export default function DraftsPage() {
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
               {drafts
-                .sort((a, b) => b.lastEdited - a.lastEdited)
+                .sort((a, b) => (b.lastEdited ?? 0) - (a.lastEdited ?? 0))
                 .map((draft) => (
                   <motion.div
                     key={draft.id}
@@ -110,7 +110,7 @@ export default function DraftsPage() {
                             #{draft.number}
                           </span>
                           <span className="text-xs text-gray-300">
-                            {timeAgo(draft.lastEdited)}
+                            {timeAgo(draft.lastEdited ?? Date.now())}
                           </span>
                         </div>
                         <h3 className="text-sm font-semibold text-gray-900 truncate">
