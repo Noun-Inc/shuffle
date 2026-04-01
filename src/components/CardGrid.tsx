@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import CardThumbnail from "./CardThumbnail";
 import type { Signal } from "@/data/signals";
 
@@ -26,51 +26,48 @@ export default function CardGrid({
         animate={isShuffling ? { opacity: 0 } : { opacity: 1 }}
         transition={{ duration: 0.2 }}
       >
-        <AnimatePresence mode="popLayout">
-          {signals.map((signal) => {
-            const isNew = newCardId && String(signal.id) === String(newCardId);
-            return (
-              <motion.div
-                key={signal.id}
-                layout
-                data-grid-cell
-                initial={
-                  isNew
-                    ? { opacity: 0, rotateY: 90, scale: 0.85 }
-                    : { opacity: 0, scale: 0.8 }
-                }
-                animate={{ opacity: 1, rotateY: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                transition={
-                  isNew
-                    ? {
-                        type: "spring",
-                        stiffness: 70,
-                        damping: 16,
-                        delay: 0.25,
-                      }
-                    : { type: "spring", stiffness: 300, damping: 25 }
-                }
-                style={isNew ? { transformPerspective: 700 } : undefined}
-                className="relative"
-              >
-                <CardThumbnail
-                  signal={signal}
-                  onClick={() => onCardClick(signal)}
-                  isStarred={starredIds.map(String).includes(String(signal.id))}
+        {signals.map((signal) => {
+          const isNew = newCardId && String(signal.id) === String(newCardId);
+          return (
+            <motion.div
+              key={signal.id}
+              layout
+              data-grid-cell
+              initial={
+                isNew
+                  ? { opacity: 0, rotateY: 90, scale: 0.85 }
+                  : { opacity: 0, scale: 0.8 }
+              }
+              animate={{ opacity: 1, rotateY: 0, scale: 1 }}
+              transition={
+                isNew
+                  ? {
+                      type: "spring",
+                      stiffness: 70,
+                      damping: 16,
+                      delay: 0.25,
+                    }
+                  : { type: "spring", stiffness: 300, damping: 25 }
+              }
+              style={isNew ? { transformPerspective: 700 } : undefined}
+              className="relative"
+            >
+              <CardThumbnail
+                signal={signal}
+                onClick={() => onCardClick(signal)}
+                isStarred={starredIds.map(String).includes(String(signal.id))}
+              />
+              {isNew && (
+                <motion.div
+                  className="absolute inset-0 rounded-lg ring-2 ring-blue-400 pointer-events-none"
+                  initial={{ opacity: 1 }}
+                  animate={{ opacity: 0 }}
+                  transition={{ delay: 1.2, duration: 1.2 }}
                 />
-                {isNew && (
-                  <motion.div
-                    className="absolute inset-0 rounded-lg ring-2 ring-blue-400 pointer-events-none"
-                    initial={{ opacity: 1 }}
-                    animate={{ opacity: 0 }}
-                    transition={{ delay: 1.2, duration: 1.2 }}
-                  />
-                )}
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+              )}
+            </motion.div>
+          );
+        })}
       </motion.div>
     </div>
   );

@@ -1,26 +1,37 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { Signal } from "@/data/signals";
 
-export function useShuffle(initialSignals: Signal[]) {
-  const [signals, setSignals] = useState(initialSignals);
+export function useShuffle(sourceSignals: Signal[]) {
+  // Track the source signals and whether the user has shuffled/filtered
+  const [customOrder, setCustomOrder] = useState<Signal[] | null>(null);
   const [isShuffling, setIsShuffling] = useState(false);
+  const prevSourceRef = useRef(sourceSignals);
+
+  // When source signals change (e.g. Supabase load), reset custom order
+  useEffect(() => {
+    if (prevSourceRef.current !== sourceSignals) {
+      prevSourceRef.current = sourceSignals;
+      setCustomOrder(null);
+    }
+  }, [sourceSignals]);
+
+  // Active signals: custom order if set, otherwise source
+  const signals = customOrder ?? sourceSignals;
 
   const shuffle = useCallback(() => {
     if (isShuffling) return;
     setIsShuffling(true);
 
-    // Fisher-Yates shuffle
     const shuffled = [...signals];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
 
-    // Apply new order right as deal lands, so grid appears with new order
     setTimeout(() => {
-      setSignals(shuffled);
+      setCustomOrder(shuffled);
     }, 4100);
 
     setTimeout(() => {
@@ -29,18 +40,21 @@ export function useShuffle(initialSignals: Signal[]) {
   }, [signals, isShuffling]);
 
   const sortByNumber = useCallback(() => {
-    setSignals((prev) => [...prev].sort((a, b) => a.number - b.number));
-  }, []);
+    setCustomOrder((prev) => {
+      const arr = prev ?? sourceSignals;
+      return [...arr].sort((a, b) => a.number - b.number);
+    });
+  }, [sourceSignals]);
 
   const filterByCategory = useCallback(
     (category: string | null) => {
       if (!category) {
-        setSignals(initialSignals);
+        setCustomOrder(null);
       } else {
-        setSignals(initialSignals.filter((s) => s.category === category));
+        setCustomOrder(sourceSignals.filter((s) => s.category === category));
       }
     },
-    [initialSignals]
+    [sourceSignals]
   );
 
   return { signals, isShuffling, shuffle, sortByNumber, filterByCategory };
