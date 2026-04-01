@@ -121,7 +121,7 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={imgRef}
-          src={thumbUrl(signal.images[0]?.url)}
+          src={thumbUrl(signal.images[0]?.url, signal.images[0]?.thumbUrl)}
           alt={signal.title}
           loading="lazy"
           decoding="async"

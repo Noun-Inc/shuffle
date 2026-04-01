@@ -1,10 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import {
+  fetchStars,
+  toggleStar as dbToggleStar,
+  fetchComments,
+  upsertComment as dbUpsertComment,
+} from "@/lib/queries";
+
+type SignalId = string | number;
 
 interface UserSignalData {
-  starred: Set<number>;
-  comments: Record<number, string>; // signalId -> comment text
+  starred: Set<string>;
+  comments: Record<string, string>;
 }
 
 const STORAGE_KEY = "shuffle-user-data";
@@ -16,8 +24,10 @@ function loadData(): UserSignalData {
     if (!raw) return { starred: new Set(), comments: {} };
     const parsed = JSON.parse(raw);
     return {
-      starred: new Set(parsed.starred || []),
-      comments: parsed.comments || {},
+      starred: new Set((parsed.starred || []).map(String)),
+      comments: Object.fromEntries(
+        Object.entries(parsed.comments || {}).map(([k, v]) => [String(k), v])
+      ) as Record<string, string>,
     };
   } catch {
     return { starred: new Set(), comments: {} };
@@ -45,63 +55,73 @@ export function useUserData() {
   });
   const [loaded, setLoaded] = useState(false);
 
+  // Load from localStorage immediately, then sync from Supabase
   useEffect(() => {
-    setData(loadData());
+    const local = loadData();
+    setData(local);
     setLoaded(true);
-  }, []);
 
-  const persist = useCallback((next: UserSignalData) => {
-    setData(next);
-    saveData(next);
-  }, []);
-
-  const toggleStar = useCallback(
-    (signalId: number) => {
-      setData((prev) => {
-        const next = { ...prev, starred: new Set(prev.starred) };
-        if (next.starred.has(signalId)) {
-          next.starred.delete(signalId);
-        } else {
-          next.starred.add(signalId);
-        }
-        saveData(next);
-        return next;
+    // Sync from Supabase in background
+    Promise.all([fetchStars(), fetchComments()])
+      .then(([dbStarred, dbComments]) => {
+        setData((prev) => {
+          // Merge: Supabase data takes priority, but keep local-only entries
+          const mergedStarred = new Set([...prev.starred, ...dbStarred]);
+          const mergedComments = { ...prev.comments, ...dbComments };
+          const merged = { starred: mergedStarred, comments: mergedComments };
+          saveData(merged);
+          return merged;
+        });
+      })
+      .catch(() => {
+        // Supabase unavailable — continue with localStorage
       });
-    },
-    []
-  );
+  }, []);
+
+  const toggleStar = useCallback((signalId: SignalId) => {
+    const id = String(signalId);
+    setData((prev) => {
+      const next = { ...prev, starred: new Set(prev.starred) };
+      if (next.starred.has(id)) {
+        next.starred.delete(id);
+      } else {
+        next.starred.add(id);
+      }
+      saveData(next);
+      return next;
+    });
+    // Sync to Supabase in background
+    dbToggleStar(String(signalId)).catch(() => {});
+  }, []);
 
   const isStarred = useCallback(
-    (signalId: number) => data.starred.has(signalId),
+    (signalId: SignalId) => data.starred.has(String(signalId)),
     [data.starred]
   );
 
-  const setComment = useCallback(
-    (signalId: number, text: string) => {
-      setData((prev) => {
-        const next = {
-          ...prev,
-          comments: { ...prev.comments },
-        };
-        if (text.trim()) {
-          next.comments[signalId] = text.trim();
-        } else {
-          delete next.comments[signalId];
-        }
-        saveData(next);
-        return next;
-      });
-    },
-    []
-  );
+  const setComment = useCallback((signalId: SignalId, text: string) => {
+    const id = String(signalId);
+    setData((prev) => {
+      const next = { ...prev, comments: { ...prev.comments } };
+      if (text.trim()) {
+        next.comments[id] = text.trim();
+      } else {
+        delete next.comments[id];
+      }
+      saveData(next);
+      return next;
+    });
+    // Sync to Supabase in background
+    dbUpsertComment(String(signalId), text).catch(() => {});
+  }, []);
 
   const getComment = useCallback(
-    (signalId: number) => data.comments[signalId] || "",
+    (signalId: SignalId) => data.comments[String(signalId)] || "",
     [data.comments]
   );
 
   const starredIds = [...data.starred];
-  const commentedIds = Object.keys(data.comments).map(Number);
+  const commentedIds = Object.keys(data.comments);
 
   return {
     loaded,

@@ -19,9 +19,9 @@ function timeAgo(timestamp: number): string {
 
 export default function DraftsPage() {
   const { drafts, deleteDraft, loaded } = useDrafts();
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | number | null>(null);
 
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: string | number) => {
     if (confirmDeleteId === id) {
       deleteDraft(id);
       setConfirmDeleteId(null);

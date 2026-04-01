@@ -11,7 +11,8 @@ import ShuffleOverlay from "@/components/ShuffleOverlay";
 import { useShuffle } from "@/hooks/useShuffle";
 import { useUserData } from "@/hooks/useUserData";
 import { useDrafts } from "@/hooks/useDrafts";
-import { signals as initialSignals, categories } from "@/data/signals";
+import { fetchDeckSignals } from "@/lib/queries";
+import { signals as fallbackSignals, categories as fallbackCategories } from "@/data/signals";
 import type { Signal } from "@/data/signals";
 
 export interface DealTarget {
@@ -29,9 +30,27 @@ export default function Home() {
   const [showStarred, setShowStarred] = useState(false);
   const [showCommented, setShowCommented] = useState(false);
   const [dealTargets, setDealTargets] = useState<DealTarget[]>([]);
+  const [loadedSignals, setLoadedSignals] = useState<Signal[]>(fallbackSignals);
+  const [loadedCategories, setLoadedCategories] = useState<string[]>(fallbackCategories);
+  const [dbLoaded, setDbLoaded] = useState(false);
+
+  // Load signals from Supabase on mount, fall back to static data
+  useEffect(() => {
+    fetchDeckSignals("2026-signals")
+      .then(({ signals: dbSignals, categories: dbCats }) => {
+        if (dbSignals.length > 0) {
+          setLoadedSignals(dbSignals);
+          setLoadedCategories(dbCats);
+        }
+        setDbLoaded(true);
+      })
+      .catch(() => {
+        setDbLoaded(true); // Use fallback silently
+      });
+  }, []);
 
   const { signals, isShuffling, shuffle, sortByNumber, filterByCategory } =
-    useShuffle(initialSignals);
+    useShuffle(loadedSignals);
 
   const userData = useUserData();
   const { draftCount } = useDrafts();
@@ -69,10 +88,10 @@ export default function Home() {
   const filteredSignals = useMemo(() => {
     let result = signals;
     if (showStarred) {
-      result = result.filter((s) => userData.starredIds.includes(s.id));
+      result = result.filter((s) => userData.starredIds.includes(String(s.id)));
     }
     if (showCommented) {
-      result = result.filter((s) => userData.commentedIds.includes(s.id));
+      result = result.filter((s) => userData.commentedIds.includes(String(s.id)));
     }
     return result;
   }, [signals, showStarred, showCommented, userData.starredIds, userData.commentedIds]);
@@ -99,7 +118,7 @@ export default function Home() {
       />
 
       <FilterSort
-        categories={categories}
+        categories={loadedCategories}
         activeCategory={activeCategory}
         onCategoryChange={handleCategoryChange}
         onSortByNumber={sortByNumber}
@@ -128,8 +147,12 @@ export default function Home() {
       <ShuffleOverlay
         isActive={isShuffling}
         cardImages={signals.map((s) => {
-          const url = s.images[0]?.url;
-          return url?.replace(/^\/images\//, "/thumbs/").replace(/\.(png|jpg|jpeg|webp)$/i, ".jpg") || "";
+          const img = s.images[0];
+          if (!img) return "";
+          if (img.thumbUrl) return img.thumbUrl;
+          const url = img.url;
+          if (url.includes("signal-images/full/")) return url.replace("/full/", "/thumbs/").replace(/\.(png|webp)$/i, ".jpg");
+          return url.replace(/^\/images\//, "/thumbs/").replace(/\.(png|jpg|jpeg|webp)$/i, ".jpg");
         }).filter(Boolean)}
         dealTargets={dealTargets}
       />

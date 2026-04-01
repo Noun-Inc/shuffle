@@ -8,7 +8,7 @@ interface CardGridProps {
   signals: Signal[];
   isShuffling: boolean;
   onCardClick: (signal: Signal) => void;
-  starredIds?: number[];
+  starredIds?: (string | number)[];
 }
 
 export default function CardGrid({
@@ -38,7 +38,7 @@ export default function CardGrid({
               <CardThumbnail
                 signal={signal}
                 onClick={() => onCardClick(signal)}
-                isStarred={starredIds.includes(signal.id)}
+                isStarred={starredIds.map(String).includes(String(signal.id))}
               />
             </motion.div>
           ))}

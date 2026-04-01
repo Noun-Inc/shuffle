@@ -1,133 +1,84 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { SignalImage } from "@/data/signals";
+import { fetchDrafts, deleteSignal, publishSignal } from "@/lib/queries";
+import type { Signal } from "@/data/signals";
 
-export interface DraftSignal {
-  id: number;
-  number: number;
-  title: string;
-  body: string;
-  images: SignalImage[];
-  category?: string;
-  tags?: string[];
-  year: number;
-  reference?: string;
+export type DraftSignal = Signal & {
   status: "draft" | "published";
-  lastEdited: number; // timestamp
-}
+  lastEdited?: number;
+};
 
-const STORAGE_KEY = "shuffle-drafts";
-
-function loadDrafts(): DraftSignal[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as DraftSignal[];
-  } catch {
-    return [];
-  }
-}
-
-function saveDraftsToStorage(drafts: DraftSignal[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
-  } catch {
-    // storage full or unavailable
-  }
-}
-
-export function useDrafts() {
+export function useDrafts(deckSlug: string = "2026-signals") {
   const [drafts, setDrafts] = useState<DraftSignal[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    setDrafts(loadDrafts());
-    setLoaded(true);
-  }, []);
-
-  const persist = useCallback((next: DraftSignal[]) => {
-    setDrafts(next);
-    saveDraftsToStorage(next);
-  }, []);
-
-  const saveDraft = useCallback(
-    (draft: Omit<DraftSignal, "status" | "lastEdited"> & { id?: number }) => {
-      setDrafts((prev) => {
-        const existing = prev.find((d) => d.id === draft.id);
-        let next: DraftSignal[];
-        if (existing) {
-          // Update existing draft
-          next = prev.map((d) =>
-            d.id === draft.id
-              ? { ...d, ...draft, status: "draft" as const, lastEdited: Date.now() }
-              : d
-          );
-        } else {
-          // New draft
-          const newDraft: DraftSignal = {
-            ...draft,
-            id: draft.id || Date.now(),
-            status: "draft",
-            lastEdited: Date.now(),
-          };
-          next = [...prev, newDraft];
-        }
-        saveDraftsToStorage(next);
-        return next;
-      });
-    },
-    []
-  );
-
-  const updateDraft = useCallback(
-    (id: number, updates: Partial<DraftSignal>) => {
-      setDrafts((prev) => {
-        const next = prev.map((d) =>
-          d.id === id ? { ...d, ...updates, lastEdited: Date.now() } : d
-        );
-        saveDraftsToStorage(next);
-        return next;
-      });
-    },
-    []
-  );
-
-  const deleteDraft = useCallback((id: number) => {
-    setDrafts((prev) => {
-      const next = prev.filter((d) => d.id !== id);
-      saveDraftsToStorage(next);
-      return next;
-    });
-  }, []);
-
-  const publishDraft = useCallback((id: number) => {
-    setDrafts((prev) => {
-      const next = prev.map((d) =>
-        d.id === id ? { ...d, status: "published" as const, lastEdited: Date.now() } : d
+  const loadDrafts = useCallback(async () => {
+    try {
+      const data = await fetchDrafts(deckSlug);
+      setDrafts(
+        data.map((s) => ({
+          ...s,
+          status: "draft" as const,
+          lastEdited: Date.now(),
+        }))
       );
-      saveDraftsToStorage(next);
-      return next;
-    });
-  }, []);
+    } catch {
+      // Supabase unavailable
+    }
+    setLoaded(true);
+  }, [deckSlug]);
+
+  useEffect(() => {
+    loadDrafts();
+  }, [loadDrafts]);
+
+  const deleteDraft = useCallback(
+    async (id: string | number) => {
+      try {
+        await deleteSignal(String(id));
+        setDrafts((prev) => prev.filter((d) => d.id !== id));
+      } catch (err) {
+        console.error("Delete draft error:", err);
+      }
+    },
+    []
+  );
+
+  const publishDraftFn = useCallback(
+    async (id: string | number) => {
+      try {
+        await publishSignal(String(id));
+        setDrafts((prev) => prev.filter((d) => d.id !== id));
+      } catch (err) {
+        console.error("Publish draft error:", err);
+      }
+    },
+    []
+  );
 
   const getDraft = useCallback(
-    (id: number) => drafts.find((d) => d.id === id) || null,
+    (id: string | number) => drafts.find((d) => String(d.id) === String(id)) || null,
     [drafts]
   );
 
-  const draftOnly = drafts.filter((d) => d.status === "draft");
+  // Keep a saveDraft stub for backward compat with admin page localStorage fallback
+  const saveDraft = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    (_data: Record<string, unknown>) => {
+      // No-op — admin page now saves directly via upsertSignal
+    },
+    []
+  );
 
   return {
     loaded,
-    drafts: draftOnly,
-    allDrafts: drafts,
+    drafts,
     saveDraft,
-    updateDraft,
     deleteDraft,
-    publishDraft,
+    publishDraft: publishDraftFn,
     getDraft,
-    draftCount: draftOnly.length,
+    draftCount: drafts.length,
+    reload: loadDrafts,
   };
 }

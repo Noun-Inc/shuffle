@@ -7,6 +7,7 @@ import Link from "next/link";
 import type { SignalImage } from "@/data/signals";
 import { signals, categories } from "@/data/signals";
 import { useDrafts } from "@/hooks/useDrafts";
+import { upsertSignal, uploadSignalImage, getNextNumber as fetchNextNumber } from "@/lib/queries";
 
 interface ImageEntry {
   id: string;
@@ -86,7 +87,7 @@ function AdminPage() {
   const draftId = searchParams.get("draft");
   const { saveDraft, getDraft, publishDraft } = useDrafts();
 
-  const [editingDraftId, setEditingDraftId] = useState<number | null>(null);
+  const [editingDraftId, setEditingDraftId] = useState<string | number | null>(null);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [category, setCategory] = useState("");
@@ -217,10 +218,34 @@ function AdminPage() {
 
   const handleSaveDraft = async () => {
     setSaving(true);
-    const data = buildSignalData();
-    saveDraft(data);
-    setEditingDraftId(data.id);
-    await new Promise((r) => setTimeout(r, 400));
+    try {
+      const imgData = images.map((img) => ({
+        url: img.previewUrl || "",
+        alt: img.alt,
+        source: img.isFromInternet ? img.sourceUrl : undefined,
+        sourceLabel: img.isFromInternet ? img.sourceLabel : undefined,
+      }));
+
+      const saved = await upsertSignal({
+        id: typeof editingDraftId === "string" ? editingDraftId : undefined,
+        deckSlug: "2026-signals",
+        number: nextNum.current,
+        title,
+        body,
+        category: customCategory || category || suggestedCategory || undefined,
+        year: deckYear.current,
+        reference: reference || undefined,
+        status: "draft",
+        images: imgData,
+      });
+      setEditingDraftId(saved.id as string);
+    } catch (err) {
+      console.error("Save draft error:", err);
+      // Fallback to localStorage
+      const data = buildSignalData();
+      saveDraft(data);
+      setEditingDraftId(data.id);
+    }
     setSaving(false);
     setSavedAs("draft");
     setTimeout(() => setSavedAs(null), 3000);
@@ -228,12 +253,42 @@ function AdminPage() {
 
   const handlePublish = async () => {
     setSaving(true);
-    const data = buildSignalData();
-    if (editingDraftId) {
-      publishDraft(editingDraftId);
+    try {
+      // Upload images to Supabase Storage if they are local files
+      const uploadedImages = [];
+      const tempSignalId = editingDraftId || `new-${Date.now()}`;
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        let url = img.previewUrl || "";
+
+        // If it's a blob/local file, upload to Supabase Storage
+        if (img.file) {
+          url = await uploadSignalImage(img.file, String(tempSignalId), i);
+        }
+
+        uploadedImages.push({
+          url,
+          alt: img.alt,
+          source: img.isFromInternet ? img.sourceUrl : undefined,
+          sourceLabel: img.isFromInternet ? img.sourceLabel : undefined,
+        });
+      }
+
+      await upsertSignal({
+        id: typeof editingDraftId === "string" ? editingDraftId : undefined,
+        deckSlug: "2026-signals",
+        number: nextNum.current,
+        title,
+        body,
+        category: customCategory || category || suggestedCategory || undefined,
+        year: deckYear.current,
+        reference: reference || undefined,
+        status: "published",
+        images: uploadedImages,
+      });
+    } catch (err) {
+      console.error("Publish error:", err);
     }
-    console.log("Published signal:", JSON.stringify(data, null, 2));
-    await new Promise((r) => setTimeout(r, 600));
     setSaving(false);
     setSavedAs("published");
     setTimeout(() => setSavedAs(null), 3000);

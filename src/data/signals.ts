@@ -1,12 +1,13 @@
 export interface SignalImage {
   url: string;
+  thumbUrl?: string;
   alt?: string;
   source?: string;
   sourceLabel?: string;
 }
 
 export interface Signal {
-  id: number;
+  id: string | number; // UUID from Supabase, or legacy number
   number: number;
   title: string;
   body: string;
