@@ -97,13 +97,21 @@ function AdminPage() {
   const [images, setImages] = useState<ImageEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [savedAs, setSavedAs] = useState<"draft" | "published" | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
   const [suggestedCategory, setSuggestedCategory] = useState("");
   const [isDraggingGlobal, setIsDraggingGlobal] = useState(false);
 
-  // Load draft if ?draft=ID is in URL
+  // Fetch the real next signal number from Supabase on mount
+  useEffect(() => {
+    fetchNextNumber("2026-signals")
+      .then((n) => { nextNum.current = n; })
+      .catch(() => { /* keep static fallback */ });
+  }, []);
+
+  // Load draft if ?draft=ID is in URL (ID is a UUID string, not a number)
   useEffect(() => {
     if (!draftId) return;
-    const draft = getDraft(Number(draftId));
+    const draft = getDraft(draftId); // UUID string — no Number() conversion
     if (!draft) return;
     setEditingDraftId(draft.id);
     setTitle(draft.title);
@@ -219,6 +227,7 @@ function AdminPage() {
 
   const handleSaveDraft = async () => {
     setSaving(true);
+    setPublishError(null);
     try {
       const imgData = images.map((img) => ({
         url: img.previewUrl || "",
@@ -240,33 +249,29 @@ function AdminPage() {
         images: imgData,
       });
       setEditingDraftId(saved.id as string);
+      setSavedAs("draft");
+      setTimeout(() => setSavedAs(null), 3000);
     } catch (err) {
       console.error("Save draft error:", err);
-      // Fallback to localStorage
-      const data = buildSignalData();
-      saveDraft(data);
-      setEditingDraftId(data.id);
+      const msg = err instanceof Error ? err.message : String(err);
+      setPublishError(`Draft save failed: ${msg}`);
     }
     setSaving(false);
-    setSavedAs("draft");
-    setTimeout(() => setSavedAs(null), 3000);
   };
 
   const handlePublish = async () => {
     setSaving(true);
+    setPublishError(null);
     try {
-      // Upload images to Supabase Storage if they are local files
+      // Upload any local image files to Supabase Storage
       const uploadedImages = [];
       const tempSignalId = editingDraftId || `new-${Date.now()}`;
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
         let url = img.previewUrl || "";
-
-        // If it's a blob/local file, upload to Supabase Storage
         if (img.file) {
           url = await uploadSignalImage(img.file, String(tempSignalId), i);
         }
-
         uploadedImages.push({
           url,
           alt: img.alt,
@@ -288,16 +293,15 @@ function AdminPage() {
         images: uploadedImages,
       });
 
-      // Store new signal ID so home page can animate it in
+      // Store new signal ID so home page can animate it in, then navigate
       sessionStorage.setItem("newSignalId", String(saved.id));
       router.push("/");
-      return;
     } catch (err) {
       console.error("Publish error:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setPublishError(`Publish failed: ${msg}`);
+      setSaving(false);
     }
-    setSaving(false);
-    setSavedAs("published");
-    setTimeout(() => setSavedAs(null), 3000);
   };
 
   const resolvedCategory = customCategory || category;
@@ -705,6 +709,30 @@ function AdminPage() {
             </div>
           </details>
         </div>
+
+        {/* Error banner */}
+        <AnimatePresence>
+          {publishError && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-start gap-2"
+            >
+              <svg className="shrink-0 mt-0.5" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span>{publishError}</span>
+              <button onClick={() => setPublishError(null)} className="ml-auto text-red-400 hover:text-red-600">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Save buttons */}
         <div className="pt-4 pb-12 flex gap-3">
