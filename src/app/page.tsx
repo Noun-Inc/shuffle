@@ -34,6 +34,7 @@ export default function Home() {
   const [loadedCategories, setLoadedCategories] = useState<string[]>(fallbackCategories);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [newCardId, setNewCardId] = useState<string | null>(null);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Load signals from Supabase on mount, fall back to static data
   useEffect(() => {
@@ -49,11 +50,15 @@ export default function Home() {
         if (dbSignals.length > 0) {
           setLoadedSignals(dbSignals);
           setLoadedCategories(dbCats);
+        } else {
+          setDbError(`Supabase returned 0 signals`);
         }
         setDbLoaded(true);
       })
-      .catch(() => {
-        setDbLoaded(true); // Use fallback silently
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        setDbError(`Fetch failed: ${msg}`);
+        setDbLoaded(true);
       });
   }, []);
 
@@ -133,6 +138,15 @@ export default function Home() {
         isOpen={filterOpen}
         onClose={() => setFilterOpen(false)}
       />
+
+      {/* Temporary debug banner — remove once Supabase fetch is confirmed working */}
+      {dbError && (
+        <div className="max-w-7xl mx-auto px-4 pt-2">
+          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-xs text-red-700 font-mono">
+            ⚠ DB: {dbError}
+          </div>
+        </div>
+      )}
 
       {/* Empty state for filters */}
       {filteredSignals.length === 0 && (showStarred || showCommented) ? (
