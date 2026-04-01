@@ -1,14 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+// The anon key is a PUBLIC key — it's safe to commit.
+// RLS policies protect the data, not this key.
+// Hardcoded as fallback so deploys work even if env vars aren't set.
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  "https://eowgaerqzwxvyyqzqgvo.supabase.co";
 
-// Only create a real client if we have valid credentials
-export const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : createClient("https://placeholder.supabase.co", "placeholder-key");
+const supabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvd2dhZXJxend4dnl5cXpxZ3ZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwMTkzOTksImV4cCI6MjA5MDU5NTM5OX0.um7OHk-HVKJoyadjgl4vi-bsye_KZ0Ja4ZB7FG99OhY";
 
-export const hasSupabase = !!(supabaseUrl && supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Device ID for pre-auth user data (stars/comments)
 const DEVICE_ID_KEY = "shuffle-device-id";
