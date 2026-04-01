@@ -293,9 +293,10 @@ function AdminPage() {
         images: uploadedImages,
       });
 
-      // Store new signal ID so home page can animate it in, then navigate
+      // Store new signal ID so home page can animate it in, then do a
+      // full page reload so the home page re-fetches fresh data from Supabase
       sessionStorage.setItem("newSignalId", String(saved.id));
-      router.push("/");
+      window.location.href = "/";
     } catch (err) {
       console.error("Publish error:", err);
       const msg = err instanceof Error ? err.message : String(err);
