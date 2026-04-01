@@ -96,16 +96,30 @@ export async function fetchDeckSignals(
 
   if (!deck) return { signals: [], categories: [] };
 
-  const { data, error } = await supabase
+  // Try with images joined first
+  let { data, error } = await supabase
     .from("signals")
     .select("*, signal_images(*)")
     .eq("deck_id", deck.id)
     .eq("status", "published")
     .order("number");
 
+  // If the join fails (e.g. signal_images RLS), fall back to signals only
+  if (error) {
+    console.warn("fetchDeckSignals: joined query failed, retrying without images:", error.message);
+    ({ data, error } = await supabase
+      .from("signals")
+      .select("*")
+      .eq("deck_id", deck.id)
+      .eq("status", "published")
+      .order("number"));
+  }
+
   if (error) throw error;
 
-  const signals = (data || []).map(toSignal);
+  const signals = (data || []).map((row) =>
+    toSignal({ ...row, signal_images: row.signal_images ?? [] })
+  );
   const categories = [
     ...new Set(signals.map((s) => s.category).filter(Boolean) as string[]),
   ].sort();
