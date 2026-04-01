@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import CardThumbnail from "./CardThumbnail";
 import type { Signal } from "@/data/signals";
@@ -19,6 +20,15 @@ export default function CardGrid({
   starredIds = [],
   newCardId = null,
 }: CardGridProps) {
+  const newCardRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to new card before the flip animation plays
+  useEffect(() => {
+    if (newCardId && newCardRef.current) {
+      newCardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [newCardId]);
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       <motion.div
@@ -31,6 +41,7 @@ export default function CardGrid({
           return (
             <motion.div
               key={signal.id}
+              ref={isNew ? newCardRef : undefined}
               layout
               data-grid-cell
               initial={

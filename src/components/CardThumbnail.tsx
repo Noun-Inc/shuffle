@@ -119,22 +119,26 @@ export default function CardThumbnail({ signal, onClick, isStarred }: CardThumbn
       <div className="aspect-[5/7] rounded-xl overflow-hidden bg-gray-300 shadow-sm hover:shadow-md transition-shadow relative">
         {/* B&W high contrast image */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          ref={imgRef}
-          src={thumbUrl(signal.images[0]?.url, signal.images[0]?.thumbUrl)}
-          alt={signal.title}
-          loading="lazy"
-          decoding="async"
-          crossOrigin="anonymous"
-          onLoad={analyzeImage}
-          className={`w-full h-full transition-[filter] duration-500 ease-out ${useContain ? "object-contain" : "object-cover"}`}
-          style={{
-            filter: hovered
-              ? "grayscale(0%) contrast(1.05) brightness(1)"
-              : "grayscale(100%) contrast(1.35) brightness(0.92) saturate(0)",
-            objectPosition: focalPoint,
-          }}
-        />
+        {signal.images[0]?.url ? (
+          <img
+            ref={imgRef}
+            src={thumbUrl(signal.images[0].url, signal.images[0].thumbUrl)}
+            alt={signal.title}
+            loading="lazy"
+            decoding="async"
+            crossOrigin="anonymous"
+            onLoad={analyzeImage}
+            className={`w-full h-full transition-[filter] duration-500 ease-out ${useContain ? "object-contain" : "object-cover"}`}
+            style={{
+              filter: hovered
+                ? "grayscale(0%) contrast(1.05) brightness(1)"
+                : "grayscale(100%) contrast(1.35) brightness(0.92) saturate(0)",
+              objectPosition: focalPoint,
+            }}
+          />
+        ) : (
+          <div className="w-full h-full bg-gray-300" />
+        )}
 
         {/* Grain noise overlay */}
         <div

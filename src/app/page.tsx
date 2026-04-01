@@ -134,8 +134,12 @@ export default function Home() {
         onClose={() => setFilterOpen(false)}
       />
 
-      {/* Empty state for filters */}
-      {filteredSignals.length === 0 && (showStarred || showCommented) ? (
+      {/* Loading state while Supabase data loads */}
+      {!dbLoaded ? (
+        <div className="flex items-center justify-center py-32">
+          <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+        </div>
+      ) : filteredSignals.length === 0 && (showStarred || showCommented) ? (
         <div className="flex flex-col items-center justify-center py-32 text-gray-400">
           <p className="text-sm">
             {showStarred

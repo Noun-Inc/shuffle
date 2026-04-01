@@ -10,11 +10,10 @@ export function thumbUrl(originalUrl: string, explicitThumbUrl?: string): string
   if (explicitThumbUrl) return explicitThumbUrl;
   if (!originalUrl) return originalUrl;
 
-  // Supabase Storage URL
+  // Supabase Storage URL — only convert to /thumbs/ if we know thumbs exist
+  // (migrated images have thumbs; newly uploaded images may not)
   if (originalUrl.includes("signal-images/full/")) {
-    return originalUrl
-      .replace("/full/", "/thumbs/")
-      .replace(/\.(png|webp)$/i, ".jpg");
+    return originalUrl;
   }
 
   // Legacy local path
