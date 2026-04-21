@@ -1,847 +1,461 @@
 "use client";
 
-import { Suspense, useState, useRef, useCallback, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import type { SignalImage } from "@/data/signals";
-import { signals, categories } from "@/data/signals";
-import { useDrafts } from "@/hooks/useDrafts";
-import { upsertSignal, uploadSignalImage, getNextNumber as fetchNextNumber } from "@/lib/queries";
+import { Copy, Check, Pencil, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import type { Deck } from "@/lib/queries";
+import type { User } from "@supabase/supabase-js";
 
-interface ImageEntry {
+interface SessionRow {
   id: string;
-  file: File | null;
-  previewUrl: string;
-  alt: string;
-  isFromInternet: boolean;
-  sourceUrl: string;
-  sourceLabel: string;
+  title: string;
+  deckTitle: string | undefined;
+  expiresAt: string;
+  allowAddSignals: boolean;
+  joinPassword: string | null;
+  participantCount: number;
+  createdAt: string;
 }
 
-function generateId() {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-// Auto-generate next signal number
-function getNextNumber() {
-  const max = signals.reduce((m, s) => Math.max(m, s.number), 0);
-  return max + 1;
-}
-
-// Get the year of the current deck being viewed
-function getCurrentDeckYear() {
-  // Default to current year; in a real app this would come from route/context
-  const years = [...new Set(signals.map((s) => s.year))].sort((a, b) => b - a);
-  return years[0] || new Date().getFullYear();
-}
-
-// Suggest a category based on the title + body using keyword matching
-function suggestCategory(title: string, body: string): string {
-  const text = (title + " " + body).toLowerCase();
-
-  const categoryKeywords: Record<string, string[]> = {
-    "Circular Economy": ["circular", "recycle", "reuse", "repair", "waste", "sustainable", "upcycle", "modular"],
-    "Health & Wellness": ["health", "wellness", "medical", "therapy", "mental", "fitness", "nutrition", "wearable", "body"],
-    "Food & Agriculture": ["food", "agriculture", "farm", "organic", "plant-based", "crop", "soil", "harvest", "meal"],
-    "Technology & AI": ["ai", "artificial intelligence", "robot", "machine learning", "algorithm", "tech", "digital", "software", "compute", "autonomous"],
-    "Fashion & Retail": ["fashion", "clothing", "apparel", "wear", "textile", "fabric", "retail", "brand", "style", "garment"],
-    "Education & Youth": ["education", "school", "student", "learn", "youth", "young", "generation", "university", "teach"],
-    "Design & Architecture": ["design", "architecture", "interior", "space", "building", "urban", "city", "construct"],
-    "Energy & Environment": ["energy", "solar", "wind", "climate", "carbon", "emission", "renewable", "environment", "green"],
-    "Media & Entertainment": ["media", "entertainment", "film", "music", "content", "stream", "game", "social media", "creator"],
-    "Mobility & Transport": ["mobility", "transport", "vehicle", "car", "ev", "electric vehicle", "bike", "flight", "travel"],
-  };
-
-  let bestMatch = "";
-  let bestScore = 0;
-
-  for (const [cat, keywords] of Object.entries(categoryKeywords)) {
-    const score = keywords.filter((kw) => text.includes(kw)).length;
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = cat;
-    }
-  }
-
-  // Also check existing categories
-  for (const cat of categories) {
-    if (text.includes(cat.toLowerCase())) return cat;
-  }
-
-  return bestMatch;
-}
-
-export default function AdminPageWrapper() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-[var(--bg)]" />}>
-      <AdminPage />
-    </Suspense>
-  );
-}
-
-function AdminPage() {
-  const nextNum = useRef(getNextNumber());
-  const deckYear = useRef(getCurrentDeckYear());
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const draftId = searchParams.get("draft");
-  const { saveDraft, getDraft, publishDraft } = useDrafts();
-
-  const [editingDraftId, setEditingDraftId] = useState<string | number | null>(null);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [category, setCategory] = useState("");
-  const [customCategory, setCustomCategory] = useState("");
-  const [reference, setReference] = useState("");
-  const [images, setImages] = useState<ImageEntry[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [savedAs, setSavedAs] = useState<"draft" | "published" | null>(null);
-  const [publishError, setPublishError] = useState<string | null>(null);
-  const [suggestedCategory, setSuggestedCategory] = useState("");
-  const [isDraggingGlobal, setIsDraggingGlobal] = useState(false);
-
-  // Fetch the real next signal number from Supabase on mount
-  useEffect(() => {
-    fetchNextNumber("2026-signals")
-      .then((n) => { nextNum.current = n; })
-      .catch(() => { /* keep static fallback */ });
-  }, []);
-
-  // Load draft if ?draft=ID is in URL (ID is a UUID string, not a number)
-  useEffect(() => {
-    if (!draftId) return;
-    const draft = getDraft(draftId); // UUID string — no Number() conversion
-    if (!draft) return;
-    setEditingDraftId(draft.id);
-    setTitle(draft.title);
-    setBody(draft.body);
-    setCategory(draft.category || "");
-    setReference(draft.reference || "");
-    nextNum.current = draft.number;
-    // Convert draft images to ImageEntry format
-    setImages(
-      draft.images.map((img) => ({
-        id: generateId(),
-        file: null,
-        previewUrl: img.url,
-        alt: img.alt || "",
-        isFromInternet: !!img.source,
-        sourceUrl: img.source || "",
-        sourceLabel: img.sourceLabel || "",
-      }))
-    );
-  }, [draftId, getDraft]);
-
-  const addImage = () => {
-    const entry: ImageEntry = {
-      id: generateId(),
-      file: null,
-      previewUrl: "",
-      alt: "",
-      isFromInternet: false,
-      sourceUrl: "",
-      sourceLabel: "",
-    };
-    setImages((prev) => [...prev, entry]);
-  };
-
-  const addImageFromFile = useCallback((file: File) => {
-    const previewUrl = URL.createObjectURL(file);
-    const entry: ImageEntry = {
-      id: generateId(),
-      file,
-      previewUrl,
-      alt: file.name.replace(/\.[^.]+$/, ""),
-      isFromInternet: false,
-      sourceUrl: "",
-      sourceLabel: "",
-    };
-    setImages((prev) => [...prev, entry]);
-  }, []);
-
-  const updateImage = (id: string, updates: Partial<ImageEntry>) => {
-    setImages((prev) =>
-      prev.map((img) => (img.id === id ? { ...img, ...updates } : img))
-    );
-  };
-
-  const removeImage = (id: string) => {
-    setImages((prev) => prev.filter((img) => img.id !== id));
-  };
-
-  const handleFileDrop = (id: string, file: File) => {
-    const previewUrl = URL.createObjectURL(file);
-    updateImage(id, { file, previewUrl, alt: file.name.replace(/\.[^.]+$/, "") });
-  };
-
-  // Auto-suggest category when title/body changes
-  const updateSuggestion = (t: string, b: string, r: string) => {
-    if (!category && !customCategory) {
-      const suggested = suggestCategory(t, b + " " + r);
-      setSuggestedCategory(suggested);
-    }
-  };
-
-  const handleTitleChange = (val: string) => {
-    setTitle(val);
-    updateSuggestion(val, body, reference);
-  };
-
-  const handleBodyChange = (val: string) => {
-    setBody(val);
-    updateSuggestion(title, val, reference);
-  };
-
-  const handleReferenceChange = (val: string) => {
-    setReference(val);
-    updateSuggestion(title, body, val);
-  };
-
-  const acceptSuggestion = () => {
-    if (suggestedCategory) {
-      if (categories.includes(suggestedCategory)) {
-        setCategory(suggestedCategory);
-      } else {
-        setCustomCategory(suggestedCategory);
-      }
-      setSuggestedCategory("");
-    }
-  };
-
-  const buildSignalData = () => ({
-    id: editingDraftId || Date.now(),
-    number: nextNum.current,
-    title,
-    body,
-    images: images.map((img) => ({
-      url: img.previewUrl || "",
-      alt: img.alt,
-      source: img.isFromInternet ? img.sourceUrl : undefined,
-      sourceLabel: img.isFromInternet ? img.sourceLabel : undefined,
-    })) as SignalImage[],
-    category: customCategory || category || suggestedCategory || undefined,
-    year: deckYear.current,
-    reference: reference || undefined,
+async function adminFetch(path: string, options?: RequestInit) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  return fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options?.headers,
+    },
   });
+}
 
-  const handleSaveDraft = async () => {
-    setSaving(true);
-    setPublishError(null);
-    try {
-      const imgData = images.map((img) => ({
-        url: img.previewUrl || "",
-        alt: img.alt,
-        source: img.isFromInternet ? img.sourceUrl : undefined,
-        sourceLabel: img.isFromInternet ? img.sourceLabel : undefined,
-      }));
+// ─── Main admin page ──────────────────────────────────────────────────────────
 
-      const saved = await upsertSignal({
-        id: typeof editingDraftId === "string" ? editingDraftId : undefined,
-        deckSlug: "2026-signals",
-        number: nextNum.current,
-        title,
-        body,
-        category: customCategory || category || suggestedCategory || undefined,
-        year: deckYear.current,
-        reference: reference || undefined,
-        status: "draft",
-        images: imgData,
-      });
-      setEditingDraftId(saved.id as string);
-      setSavedAs("draft");
-      setTimeout(() => setSavedAs(null), 3000);
-    } catch (err) {
-      console.error("Save draft error:", err);
-      const msg = err instanceof Error ? err.message : String(err);
-      setPublishError(`Draft save failed: ${msg}`);
-    }
-    setSaving(false);
+export default function AdminPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [activeTab, setActiveTab] = useState<"sessions" | "decks">("sessions");
+
+  // ── Sessions state ──
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [decks, setDecks] = useState<Deck[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createdSession, setCreatedSession] = useState<{ id: string; title: string; password: string | null } | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editExpiresAt, setEditExpiresAt] = useState("");
+  const [editAllowAddSignals, setEditAllowAddSignals] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+
+  // ── Decks tab state ──
+  const [loadingDecks, setLoadingDecks] = useState(false);
+
+  const startEdit = (session: SessionRow) => {
+    setEditingId(session.id);
+    setEditTitle(session.title);
+    setEditExpiresAt(new Date(session.expiresAt).toISOString().slice(0, 16));
+    setEditAllowAddSignals(session.allowAddSignals);
   };
 
-  const handlePublish = async () => {
-    setSaving(true);
-    setPublishError(null);
+  const handleSaveEdit = async (id: string) => {
+    setEditSaving(true);
     try {
-      // Upload any local image files to Supabase Storage
-      const uploadedImages = [];
-      const tempSignalId = editingDraftId || `new-${Date.now()}`;
-      for (let i = 0; i < images.length; i++) {
-        const img = images[i];
-        let url = img.previewUrl || "";
-        if (img.file) {
-          url = await uploadSignalImage(img.file, String(tempSignalId), i);
-        }
-        uploadedImages.push({
-          url,
-          alt: img.alt,
-          source: img.isFromInternet ? img.sourceUrl : undefined,
-          sourceLabel: img.isFromInternet ? img.sourceLabel : undefined,
-        });
+      const res = await adminFetch(`/api/admin/sessions/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: editTitle, expiresAt: new Date(editExpiresAt).toISOString(), allowAddSignals: editAllowAddSignals }),
+      });
+      if (res.ok) {
+        setSessions((prev) => prev.map((s) => s.id === id
+          ? { ...s, title: editTitle, expiresAt: new Date(editExpiresAt).toISOString(), allowAddSignals: editAllowAddSignals }
+          : s));
+        setEditingId(null);
       }
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
-      const saved = await upsertSignal({
-        id: typeof editingDraftId === "string" ? editingDraftId : undefined,
-        deckSlug: "2026-signals",
-        number: nextNum.current,
-        title,
-        body,
-        category: customCategory || category || suggestedCategory || undefined,
-        year: deckYear.current,
-        reference: reference || undefined,
-        status: "published",
-        images: uploadedImages,
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
+  };
+
+  const [formTitle, setFormTitle] = useState("");
+  const [formDeckId, setFormDeckId] = useState("");
+  const [formExpiresAt, setFormExpiresAt] = useState("");
+  const [formAllowAddSignals, setFormAllowAddSignals] = useState(false);
+  const [formSaving, setFormSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthChecked(true);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const loadDecks = useCallback(async () => {
+    setLoadingDecks(true);
+    try {
+      const res = await adminFetch("/api/admin/decks");
+      if (res.ok) {
+        const data = await res.json();
+        setDecks(data);
+        setFormDeckId((prev) => prev || (data[0]?.id ?? ""));
+      }
+    } finally {
+      setLoadingDecks(false);
+    }
+  }, []);
+
+  const loadSessions = useCallback(async () => {
+    setLoadingSessions(true);
+    try {
+      const res = await adminFetch("/api/admin/sessions");
+      if (res.ok) setSessions(await res.json());
+    } finally {
+      setLoadingSessions(false);
+    }
+  }, []);
+
+  const userId = user?.id ?? null;
+  useEffect(() => {
+    if (userId) {
+      loadDecks();
+      loadSessions();
+    }
+  }, [userId, loadDecks, loadSessions]);
+
+  const handleGoogleLogin = async () => {
+    await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/admin` } });
+  };
+
+  const handleLogout = async () => { await supabase.auth.signOut(); };
+
+  const handleCreateSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formTitle || !formDeckId || !formExpiresAt) return;
+    setFormSaving(true);
+    setFormError(null);
+    try {
+      const res = await adminFetch("/api/admin/sessions", {
+        method: "POST",
+        body: JSON.stringify({ title: formTitle, deckId: formDeckId, expiresAt: new Date(formExpiresAt).toISOString(), allowAddSignals: formAllowAddSignals }),
       });
-
-      // Store new signal ID so home page can animate it in, then do a
-      // full page reload so the home page re-fetches fresh data from Supabase
-      sessionStorage.setItem("newSignalId", String(saved.id));
-      window.location.href = "/";
-    } catch (err) {
-      console.error("Publish error:", err);
-      const msg = err instanceof Error ? err.message : String(err);
-      setPublishError(`Publish failed: ${msg}`);
-      setSaving(false);
+      const data = await res.json();
+      if (!res.ok) {
+        setFormError(data.error || "Failed to create session");
+      } else {
+        setCreatedSession({ id: data.session.id, title: data.session.title, password: data.session.joinPassword });
+        setShowCreateForm(false);
+        setFormTitle("");
+        setFormExpiresAt("");
+        setFormAllowAddSignals(false);
+        await loadSessions();
+      }
+    } catch {
+      setFormError("Connection error");
     }
+    setFormSaving(false);
   };
 
-  const resolvedCategory = customCategory || category;
+  const handleDeleteSession = async (id: string) => {
+    if (!confirm("Delete this session? All participant data will be permanently lost.")) return;
+    const res = await adminFetch(`/api/admin/sessions/${id}`, { method: "DELETE" });
+    if (res.ok) setSessions((prev) => prev.filter((s) => s.id !== id));
+  };
 
-  // Global drag & drop for images anywhere on the page
-  const handleGlobalDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingGlobal(true);
-  };
-  const handleGlobalDragLeave = (e: React.DragEvent) => {
-    // Only trigger if leaving the page entirely
-    if (e.relatedTarget === null || !(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
-      setIsDraggingGlobal(false);
-    }
-  };
-  const handleGlobalDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingGlobal(false);
-    const files = Array.from(e.dataTransfer.files).filter((f) =>
-      f.type.startsWith("image/")
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+      </div>
     );
-    files.forEach(addImageFromFile);
-  };
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-6">
+        <div className="w-full max-w-sm text-center">
+          <h1 className="text-2xl font-bold tracking-widest text-gray-900 mb-2">SHUFFLE</h1>
+          <p className="text-sm text-gray-400 mb-10">Admin — noun.global accounts only</p>
+          <button onClick={handleGoogleLogin}
+            className="w-full py-3 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-gray-700 transition-colors flex items-center justify-center gap-3">
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05" />
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+            </svg>
+            Sign in with Google
+          </button>
+          <div className="mt-6">
+            <a href="/" className="text-xs text-gray-400 hover:text-gray-600 transition-colors">← Back</a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <main
-      className="min-h-screen bg-[var(--bg)] relative"
-      onDragOver={handleGlobalDragOver}
-      onDragLeave={handleGlobalDragLeave}
-      onDrop={handleGlobalDrop}
-    >
-      {/* Global drop overlay */}
-      <AnimatePresence>
-        {isDraggingGlobal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-blue-500/10 backdrop-blur-sm border-4 border-dashed border-blue-400 rounded-3xl m-4 flex items-center justify-center pointer-events-none"
-          >
-            <div className="text-center">
-              <svg className="mx-auto mb-3" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <path d="M21 15l-5-5L5 21" />
-              </svg>
-              <p className="text-lg font-semibold text-blue-600">Drop images here</p>
-              <p className="text-sm text-blue-400 mt-1">They&apos;ll be added to this signal</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Header */}
+    <main className="min-h-screen bg-[var(--bg)]">
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200/60">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
-          <Link
-            href="/"
-            className="w-10 text-gray-500 hover:text-gray-900 transition-colors flex items-center"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </Link>
-          <h1 className="text-sm font-bold tracking-wider uppercase text-gray-900">
-            Add Signal
-          </h1>
-          <div className="w-10" />
+          <h1 className="text-sm font-bold tracking-wider uppercase text-gray-900">Admin</h1>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-400 hidden sm:block">{user.email}</span>
+            <button onClick={handleLogout} className="text-xs text-gray-500 hover:text-gray-900 transition-colors">Sign out</button>
+          </div>
         </div>
       </header>
 
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
-        {/* Auto-generated number & deck year */}
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="block text-[10px] text-gray-400 uppercase tracking-wider">Signal</span>
-            <span className="text-2xl font-bold text-gray-900">#{nextNum.current}</span>
-          </div>
-          <div className="text-right">
-            <span className="block text-[10px] text-gray-400 uppercase tracking-wider">Deck Year</span>
-            <span className="text-2xl font-bold text-gray-900">{deckYear.current}</span>
-          </div>
+      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+
+        {/* Tabs */}
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+          {(["sessions", "decks"] as const).map((tab) => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-all capitalize ${activeTab === tab ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              {tab}
+            </button>
+          ))}
         </div>
 
-        {/* Title */}
-        <Field label="Headline" required>
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => handleTitleChange(e.target.value)}
-            placeholder="Enter signal headline..."
-            className="input-field"
-          />
-        </Field>
-
-        {/* Body */}
-        <Field label="Description">
-          <textarea
-            value={body}
-            onChange={(e) => handleBodyChange(e.target.value)}
-            placeholder="What's significant about this signal? What shift is being observed?"
-            rows={4}
-            className="input-field resize-none"
-          />
-        </Field>
-
-        {/* Images */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-3">
-            Images
-          </label>
-
-          <div className="space-y-3">
-            <AnimatePresence mode="popLayout">
-              {images.map((img) => (
-                <motion.div
-                  key={img.id}
-                  layout
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="border border-gray-200 rounded-xl overflow-hidden bg-white"
-                >
-                  {/* Image preview / upload zone */}
-                  <div className="relative">
-                    {img.previewUrl ? (
-                      <div className="relative aspect-video bg-gray-100">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={img.previewUrl}
-                          alt={img.alt}
-                          className="w-full h-full object-contain"
-                        />
-                        <button
-                          onClick={() => removeImage(img.id)}
-                          className="absolute top-2 right-2 w-7 h-7 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center text-sm transition-colors"
-                        >
-                          &times;
-                        </button>
-                      </div>
-                    ) : (
-                      <label
-                        className="flex flex-col items-center justify-center min-h-[240px] bg-gray-50 border-2 border-dashed border-gray-200 rounded-t-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 transition-colors group"
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const file = e.dataTransfer.files[0];
-                          if (file?.type.startsWith("image/")) handleFileDrop(img.id, file);
-                        }}
-                      >
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleFileDrop(img.id, file);
-                          }}
-                        />
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:stroke-blue-400 transition-colors">
-                          <rect x="3" y="3" width="18" height="18" rx="2" />
-                          <circle cx="8.5" cy="8.5" r="1.5" />
-                          <path d="M21 15l-5-5L5 21" />
-                        </svg>
-                        <span className="mt-3 text-sm font-medium text-gray-400 group-hover:text-blue-500 transition-colors">
-                          Drag &amp; drop image here
-                        </span>
-                        <span className="mt-1.5 text-xs text-gray-300 group-hover:text-blue-400 transition-colors flex items-center gap-1">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                            <polyline points="17 8 12 3 7 8" />
-                            <line x1="12" y1="3" x2="12" y2="15" />
-                          </svg>
-                          or click to browse files
-                        </span>
-                      </label>
-                    )}
-                  </div>
-
-                  {/* Image fields */}
-                  <div className="p-4 space-y-3">
-                    <input
-                      type="text"
-                      value={img.alt}
-                      onChange={(e) => updateImage(img.id, { alt: e.target.value })}
-                      placeholder="Alt text / description"
-                      className="input-field text-sm"
-                    />
-
-                    {/* Source toggle */}
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() =>
-                          updateImage(img.id, {
-                            isFromInternet: !img.isFromInternet,
-                          })
-                        }
-                        className={`
-                          relative inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all
-                          ${
-                            img.isFromInternet
-                              ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
-                              : "bg-gray-100 text-gray-500 hover:bg-gray-150"
-                          }
-                        `}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="12" r="10" />
-                          <line x1="2" y1="12" x2="22" y2="12" />
-                          <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z" />
-                        </svg>
-                        {img.isFromInternet ? "From internet" : "Not from internet"}
-                      </button>
-                      {!img.isFromInternet && (
-                        <span className="text-xs text-gray-400">
-                          Your own image — no credit needed
-                        </span>
-                      )}
+        {/* ── SESSIONS TAB ── */}
+        {activeTab === "sessions" && (
+          <>
+            {/* Created session confirmation */}
+            <AnimatePresence>
+              {createdSession && (
+                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="bg-green-50 border border-green-200 rounded-2xl p-5 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-green-800">Session created: {createdSession.title}</p>
+                      <p className="text-xs text-green-600 mt-0.5">Share this with participants</p>
                     </div>
-
-                    {/* Source fields (conditional) */}
-                    <AnimatePresence>
-                      {img.isFromInternet && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="space-y-2 overflow-hidden"
-                        >
-                          <input
-                            type="url"
-                            value={img.sourceUrl}
-                            onChange={(e) =>
-                              updateImage(img.id, { sourceUrl: e.target.value })
-                            }
-                            placeholder="Paste source URL..."
-                            className="input-field text-sm"
-                          />
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={img.sourceLabel}
-                              onChange={(e) =>
-                                updateImage(img.id, {
-                                  sourceLabel: e.target.value,
-                                })
-                              }
-                              placeholder="Credit label (auto-generated if empty)"
-                              className="input-field text-sm flex-1"
-                            />
-                            <button
-                              onClick={() => {
-                                if (img.sourceUrl) {
-                                  try {
-                                    const hostname = new URL(img.sourceUrl).hostname.replace("www.", "");
-                                    updateImage(img.id, {
-                                      sourceLabel: `Source: ${hostname}`,
-                                    });
-                                  } catch {
-                                    updateImage(img.id, {
-                                      sourceLabel: "Source: " + img.sourceUrl,
-                                    });
-                                  }
-                                }
-                              }}
-                              className="shrink-0 px-3 py-2 bg-blue-50 text-blue-600 text-xs font-medium rounded-lg hover:bg-blue-100 transition-colors"
-                            >
-                              Auto-credit
-                            </button>
-                          </div>
-                          {img.sourceLabel && (
-                            <div className="bg-gray-900 rounded-lg p-3 flex items-center gap-2">
-                              <span className="text-[10px] text-white/70 font-mono">
-                                {img.sourceLabel}
-                              </span>
-                              <span className="text-[9px] text-white/40 ml-auto">
-                                Preview of credit overlay
-                              </span>
-                            </div>
-                          )}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    <button onClick={() => setCreatedSession(null)} className="text-green-400 hover:text-green-600">✕</button>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="bg-white rounded-xl p-3">
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Session ID</p>
+                      <p className="font-mono text-sm text-gray-900 break-all">{createdSession.id}</p>
+                    </div>
+                    {createdSession.password && (
+                      <div className="bg-white rounded-xl p-3">
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Session Password</p>
+                        <p className="font-mono text-2xl font-bold text-gray-900 tracking-widest">{createdSession.password}</p>
+                      </div>
+                    )}
+                    <div className="bg-white rounded-xl p-3">
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Join URL</p>
+                      <p className="font-mono text-sm text-gray-900 break-all">
+                        {typeof window !== "undefined" ? window.location.origin : ""}/session/{createdSession.id}
+                      </p>
+                    </div>
                   </div>
                 </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-
-          {/* Add image button — drag & drop or click */}
-          <label
-            className="mt-3 w-full min-h-[120px] border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/30 transition-all flex flex-col items-center justify-center gap-1 cursor-pointer group"
-            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-            onDrop={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
-              files.forEach(addImageFromFile);
-            }}
-          >
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                files.forEach(addImageFromFile);
-                e.target.value = "";
-              }}
-            />
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:stroke-blue-500 transition-colors">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            <span className="text-xs text-gray-300 group-hover:text-blue-400 transition-colors">
-              Drop or click to upload
-            </span>
-          </label>
-        </div>
-
-        {/* Reference URL — moved below Images */}
-        <Field label="Reference URL">
-          <input
-            type="url"
-            value={reference}
-            onChange={(e) => handleReferenceChange(e.target.value)}
-            placeholder="https://..."
-            className="input-field"
-          />
-        </Field>
-
-        {/* Category — auto-generated, at the bottom */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Category
-          </label>
-          {(resolvedCategory || suggestedCategory) ? (
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full font-medium">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                  <path d="M2 17l10 5 10-5" />
-                  <path d="M2 12l10 5 10-5" />
-                </svg>
-                {resolvedCategory || suggestedCategory}
-              </span>
-              {!resolvedCategory && suggestedCategory && (
-                <span className="text-xs text-gray-400">Auto-detected</span>
               )}
-              <button
-                onClick={() => {
-                  setCategory("");
-                  setCustomCategory("");
-                  setSuggestedCategory("");
-                }}
-                className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                Clear
+            </AnimatePresence>
+
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-900">Sessions</h2>
+              <button onClick={() => setShowCreateForm((v) => !v)}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors">
+                {showCreateForm ? "Cancel" : "+ New Session"}
               </button>
             </div>
-          ) : (
-            <p className="text-sm text-gray-400 italic">
-              Will be auto-generated from your headline, description, and source
-            </p>
-          )}
-          {/* Override */}
-          <details className="mt-2">
-            <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 transition-colors">
-              Override category
-            </summary>
-            <div className="mt-2 flex gap-2">
-              <select
-                value={category}
-                onChange={(e) => {
-                  setCategory(e.target.value);
-                  setCustomCategory("");
-                  setSuggestedCategory("");
-                }}
-                className="input-field flex-1 text-sm"
-              >
-                <option value="">Select category...</option>
-                {categories.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
+
+            <AnimatePresence>
+              {showCreateForm && (
+                <motion.form initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  onSubmit={handleCreateSession}
+                  className="bg-white rounded-2xl border border-gray-200 p-6 space-y-5">
+                  <h3 className="text-sm font-semibold text-gray-900">New Session</h3>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Title</label>
+                    <input type="text" value={formTitle} onChange={(e) => setFormTitle(e.target.value)}
+                      placeholder="Workshop A — Tokyo" required
+                      className="w-full text-sm px-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-gray-400 transition-colors" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Default Deck</label>
+                    <select value={formDeckId} onChange={(e) => setFormDeckId(e.target.value)} required
+                      className="w-full text-sm px-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-gray-400 transition-colors bg-white">
+                      {decks.map((d) => <option key={d.id} value={d.id}>{d.title} ({d.year})</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Expiry Date & Time</label>
+                    <input type="datetime-local" value={formExpiresAt} onChange={(e) => setFormExpiresAt(e.target.value)} required
+                      className="w-full text-sm px-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-gray-400 transition-colors" />
+                  </div>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={formAllowAddSignals} onChange={(e) => setFormAllowAddSignals(e.target.checked)} className="w-4 h-4 rounded" />
+                    <span className="text-sm text-gray-700">Allow participants to add signals</span>
+                  </label>
+                  {formAllowAddSignals && (
+                    <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                      A password will be auto-generated. All participants must provide it to join.
+                    </p>
+                  )}
+                  {formError && <p className="text-xs text-red-500">{formError}</p>}
+                  <button type="submit" disabled={formSaving}
+                    className="w-full py-3 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-gray-700 transition-colors disabled:opacity-50">
+                    {formSaving ? "Creating..." : "Create Session"}
+                  </button>
+                </motion.form>
+              )}
+            </AnimatePresence>
+
+            {loadingSessions ? (
+              <div className="flex justify-center py-12">
+                <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="text-center py-12 text-gray-400 text-sm">No sessions yet. Create one to get started.</div>
+            ) : (
+              <div className="space-y-3">
+                {sessions.map((session) => {
+                  const expired = new Date(session.expiresAt) < new Date();
+                  return (
+                    <div key={session.id}
+                      className={`bg-white rounded-2xl border p-5 ${expired ? "border-gray-100 opacity-60" : "border-gray-200"}`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-semibold text-gray-900">{session.title}</h3>
+                            {expired && <span className="text-[10px] bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">Expired</span>}
+                            {session.allowAddSignals && <span className="text-[10px] bg-blue-50 text-blue-600 rounded-full px-2 py-0.5">Signals enabled</span>}
+                          </div>
+                          <div className="mt-1.5 space-y-0.5">
+                            <p className="text-xs text-gray-400">
+                              {session.participantCount} participant{session.participantCount !== 1 ? "s" : ""} · {session.deckTitle}
+                            </p>
+                            <p className="text-xs text-gray-400">Expires {new Date(session.expiresAt).toLocaleString()}</p>
+                            {session.joinPassword && (
+                              <p className="text-xs text-gray-500">Password: <span className="font-mono font-semibold tracking-widest">{session.joinPassword}</span></p>
+                            )}
+                            <div className="pt-1 space-y-1">
+                              <div className="flex items-center gap-1">
+                                <p className="font-mono text-[11px] text-gray-300 break-all">{session.id}</p>
+                                <button onClick={() => copyToClipboard(session.id, `id-${session.id}`)}
+                                  className="shrink-0 text-gray-300 hover:text-gray-500 transition-colors" aria-label="Copy session ID">
+                                  {copiedId === `id-${session.id}` ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <p className="font-mono text-[11px] text-blue-400 break-all">
+                                  {typeof window !== "undefined" ? window.location.origin : ""}/session/{session.id}
+                                </p>
+                                <button onClick={() => copyToClipboard(`${window.location.origin}/session/${session.id}`, `url-${session.id}`)}
+                                  className="shrink-0 text-gray-300 hover:text-gray-500 transition-colors" aria-label="Copy session link">
+                                  {copiedId === `url-${session.id}` ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                          <button onClick={() => editingId === session.id ? setEditingId(null) : startEdit(session)}
+                            className="text-gray-300 hover:text-gray-600 transition-colors" aria-label="Edit session">
+                            {editingId === session.id ? <X size={15} /> : <Pencil size={15} />}
+                          </button>
+                          <button onClick={() => handleDeleteSession(session.id)}
+                            className="text-gray-300 hover:text-red-400 transition-colors" aria-label="Delete session">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" />
+                              <path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                      {editingId === session.id && (
+                        <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Title</label>
+                            <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
+                              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 outline-none focus:border-gray-400 transition-colors" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Expiry</label>
+                            <input type="datetime-local" value={editExpiresAt} onChange={(e) => setEditExpiresAt(e.target.value)}
+                              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 outline-none focus:border-gray-400 transition-colors" />
+                          </div>
+                          <label className="flex items-center gap-2.5 cursor-pointer">
+                            <input type="checkbox" checked={editAllowAddSignals} onChange={(e) => setEditAllowAddSignals(e.target.checked)} className="w-4 h-4 rounded" />
+                            <span className="text-sm text-gray-600">Allow participants to add signals</span>
+                          </label>
+                          <button onClick={() => handleSaveEdit(session.id)} disabled={editSaving || !editTitle || !editExpiresAt}
+                            className="w-full py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50">
+                            {editSaving ? "Saving…" : "Save changes"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── DECKS TAB ── */}
+        {activeTab === "decks" && (
+          <>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-900">Decks</h2>
+              <button onClick={() => router.push("/admin/decks/new")}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors">
+                + New Deck
+              </button>
+            </div>
+
+            {loadingDecks ? (
+              <div className="flex justify-center py-12">
+                <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+              </div>
+            ) : decks.length === 0 ? (
+              <div className="text-center py-12 text-gray-400 text-sm">No decks yet. Create one to get started.</div>
+            ) : (
+              <div className="space-y-3">
+                {decks.map((deck) => (
+                  <div key={deck.id} className="bg-white rounded-2xl border border-gray-200 p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-gray-900">{deck.title}</h3>
+                          <span className="text-[10px] bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{deck.year}</span>
+                        </div>
+                        {deck.description && (
+                          <p className="mt-1 text-xs text-gray-400 leading-relaxed line-clamp-2">{deck.description}</p>
+                        )}
+                      </div>
+                      <button onClick={() => router.push(`/admin/decks/${deck.id}`)}
+                        className="shrink-0 text-gray-300 hover:text-gray-600 transition-colors mt-0.5" aria-label="Edit deck">
+                        <Pencil size={15} />
+                      </button>
+                    </div>
+                  </div>
                 ))}
-              </select>
-              <span className="text-sm text-gray-400 self-center">or</span>
-              <input
-                type="text"
-                value={customCategory}
-                onChange={(e) => {
-                  setCustomCategory(e.target.value);
-                  setCategory("");
-                  setSuggestedCategory("");
-                }}
-                placeholder="New category"
-                className="input-field flex-1 text-sm"
-              />
-            </div>
-          </details>
-        </div>
-
-        {/* Error banner */}
-        <AnimatePresence>
-          {publishError && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-start gap-2"
-            >
-              <svg className="shrink-0 mt-0.5" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <span>{publishError}</span>
-              <button onClick={() => setPublishError(null)} className="ml-auto text-red-400 hover:text-red-600">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Save buttons */}
-        <div className="pt-4 pb-12 flex gap-3">
-          {/* Save as Draft */}
-          <button
-            onClick={handleSaveDraft}
-            disabled={!title || saving}
-            className={`
-              flex-1 py-3.5 rounded-xl text-sm font-semibold transition-all border-2
-              ${
-                !title
-                  ? "border-gray-200 text-gray-300 cursor-not-allowed"
-                  : saving
-                  ? "border-gray-300 text-gray-400 cursor-wait"
-                  : "border-gray-300 text-gray-600 hover:border-gray-400 hover:text-gray-800 active:scale-[0.98]"
-              }
-            `}
-          >
-            {savedAs === "draft" ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
-                Draft saved
-              </span>
-            ) : (
-              "Save as Draft"
+              </div>
             )}
-          </button>
-
-          {/* Publish */}
-          <button
-            onClick={handlePublish}
-            disabled={!title || saving}
-            className={`
-              flex-1 py-3.5 rounded-xl text-sm font-semibold transition-all
-              ${
-                !title
-                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : saving
-                  ? "bg-blue-500 text-white cursor-wait"
-                  : "bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-lg shadow-blue-600/20"
-              }
-            `}
-          >
-            {saving ? (
-              <span className="flex items-center justify-center gap-2">
-                <motion.span
-                  animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
-                  className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
-                />
-                Publishing...
-              </span>
-            ) : savedAs === "published" ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
-                Published!
-              </span>
-            ) : (
-              "Publish to Deck"
-            )}
-          </button>
-        </div>
+          </>
+        )}
       </div>
-
-      <style jsx>{`
-        .input-field {
-          width: 100%;
-          padding: 0.625rem 0.875rem;
-          border: 1px solid #e5e7eb;
-          border-radius: 0.75rem;
-          font-size: 0.9375rem;
-          color: #111827;
-          background: white;
-          transition: border-color 0.15s, box-shadow 0.15s;
-          outline: none;
-        }
-        .input-field:focus {
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-        .input-field::placeholder {
-          color: #9ca3af;
-        }
-      `}</style>
     </main>
   );
 }
 
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-        {label}
-        {required && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
-      {children}
-    </div>
-  );
-}

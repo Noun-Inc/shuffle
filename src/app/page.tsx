@@ -1,219 +1,163 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { AnimatePresence } from "framer-motion";
-import Header from "@/components/Header";
-import CardGrid from "@/components/CardGrid";
-import CardDetail from "@/components/CardDetail";
-import MobileCardDetail from "@/components/MobileCardDetail";
-import FilterSort from "@/components/FilterSort";
-import ShuffleOverlay from "@/components/ShuffleOverlay";
-import { useShuffle } from "@/hooks/useShuffle";
-import { useUserData } from "@/hooks/useUserData";
-import { useDrafts } from "@/hooks/useDrafts";
-import { fetchDeckSignals } from "@/lib/queries";
-import { signals as fallbackSignals, categories as fallbackCategories } from "@/data/signals";
-import type { Signal } from "@/data/signals";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { storeSession, getStoredSession, getDeviceId } from "@/hooks/useSession";
 
-export interface DealTarget {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
+function LoginPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const prefillSessionId = searchParams.get("session") || "";
 
-export default function Home() {
-  const [selectedCard, setSelectedCard] = useState<Signal | null>(null);
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
-  const [showStarred, setShowStarred] = useState(false);
-  const [showCommented, setShowCommented] = useState(false);
-  const [dealTargets, setDealTargets] = useState<DealTarget[]>([]);
-  const [loadedSignals, setLoadedSignals] = useState<Signal[]>(fallbackSignals);
-  const [loadedCategories, setLoadedCategories] = useState<string[]>(fallbackCategories);
-  const [dbLoaded, setDbLoaded] = useState(false);
-  const [newCardId, setNewCardId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState(prefillSessionId);
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [requiresPassword, setRequiresPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Load signals from Supabase on mount, fall back to static data
+  // Redirect if already in an active session
   useEffect(() => {
-    // Check if we just published a new card
-    const pendingNewId = sessionStorage.getItem("newSignalId");
-    if (pendingNewId) {
-      sessionStorage.removeItem("newSignalId");
-      setNewCardId(pendingNewId);
+    const stored = getStoredSession();
+    if (stored) {
+      router.replace(`/session/${stored.sessionId}`);
     }
+  }, [router]);
 
-    fetchDeckSignals("2026-signals")
-      .then(({ signals: dbSignals, categories: dbCats }) => {
-        if (dbSignals.length > 0) {
-          setLoadedSignals(dbSignals);
-          setLoadedCategories(dbCats);
-        }
-        setDbLoaded(true);
-      })
-      .catch(() => {
-        setDbLoaded(true);
+  const handleJoin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sessionId.trim()) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/session/join", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-device-id": getDeviceId(),
+        },
+        body: JSON.stringify({
+          sessionId: sessionId.trim(),
+          displayName: displayName.trim() || null,
+          password: password.trim() || undefined,
+        }),
       });
-  }, []);
 
-  const { signals, isShuffling, shuffle, sortByNumber, filterByCategory } =
-    useShuffle(loadedSignals);
+      const data = await res.json();
 
-  const userData = useUserData();
-  const { draftCount } = useDrafts();
+      if (!res.ok) {
+        if (res.status === 403 && !requiresPassword) {
+          setRequiresPassword(true);
+          setError("This session requires a password.");
+        } else {
+          setError(data.error || "Failed to join session");
+        }
+        setLoading(false);
+        return;
+      }
 
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
+      storeSession({
+        participantId: data.participantId,
+        sessionId: data.sessionId,
+        sessionTitle: data.sessionTitle,
+        displayName: data.displayName,
+        allowAddSignals: data.allowAddSignals,
+        expiresAt: data.expiresAt,
+      });
 
-  const handleCategoryChange = (category: string | null) => {
-    setActiveCategory(category);
-    filterByCategory(category);
+      router.push(`/session/${data.sessionId}`);
+    } catch {
+      setError("Connection error. Please try again.");
+      setLoading(false);
+    }
   };
 
-  // Measure actual grid cell positions from the DOM, then trigger shuffle
-  const handleShuffle = useCallback(() => {
-    const cells = document.querySelectorAll("[data-grid-cell]");
-    const targets: DealTarget[] = [];
-    cells.forEach((cell) => {
-      const rect = cell.getBoundingClientRect();
-      targets.push({
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
-        w: rect.width,
-        h: rect.height,
-      });
-    });
-    setDealTargets(targets);
-    shuffle();
-  }, [shuffle]);
-
-  // Apply starred / commented filters
-  const filteredSignals = useMemo(() => {
-    let result = signals;
-    if (showStarred) {
-      result = result.filter((s) => userData.starredIds.includes(String(s.id)));
-    }
-    if (showCommented) {
-      result = result.filter((s) => userData.commentedIds.includes(String(s.id)));
-    }
-    return result;
-  }, [signals, showStarred, showCommented, userData.starredIds, userData.commentedIds]);
-
   return (
-    <main className="min-h-screen bg-[var(--bg)]">
-      <Header
-        onShuffle={handleShuffle}
-        onToggleFilter={() => setFilterOpen(!filterOpen)}
-        isShuffling={isShuffling}
-        showStarred={showStarred}
-        onToggleStarred={() => {
-          setShowStarred((v) => !v);
-          if (!showStarred) setShowCommented(false);
-        }}
-        starredCount={userData.starredCount}
-        showCommented={showCommented}
-        onToggleCommented={() => {
-          setShowCommented((v) => !v);
-          if (!showCommented) setShowStarred(false);
-        }}
-        commentedCount={userData.commentedCount}
-        draftCount={draftCount}
-      />
-
-      <FilterSort
-        categories={loadedCategories}
-        activeCategory={activeCategory}
-        onCategoryChange={handleCategoryChange}
-        onSortByNumber={sortByNumber}
-        isOpen={filterOpen}
-        onClose={() => setFilterOpen(false)}
-      />
-
-      {/* Loading state while Supabase data loads */}
-      {!dbLoaded ? (
-        <div className="flex items-center justify-center py-32">
-          <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+    <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-6">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-10">
+          <h1 className="text-2xl font-bold tracking-widest text-gray-900 mb-2">
+            SHUFFLE
+          </h1>
+          <p className="text-sm text-gray-400">Enter your session ID to begin</p>
         </div>
-      ) : filteredSignals.length === 0 && (showStarred || showCommented) ? (
-        <div className="flex flex-col items-center justify-center py-32 text-gray-400">
-          <p className="text-sm">
-            {showStarred
-              ? "No starred signals yet. Tap the star on any card to save it."
-              : "No commented signals yet. Add a memo to any card to see it here."}
-          </p>
+
+        <form onSubmit={handleJoin} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+              Session ID
+            </label>
+            <input
+              type="text"
+              value={sessionId}
+              onChange={(e) => setSessionId(e.target.value)}
+              placeholder="9ae95235-f086-4658-..."
+              className="w-full text-sm px-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-gray-400 transition-colors font-mono"
+              autoFocus={!prefillSessionId}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+              Display Name{" "}
+              <span className="text-gray-400 normal-case font-normal">
+                (optional — leave blank to be anonymous)
+              </span>
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Your name"
+              className="w-full text-sm px-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-gray-400 transition-colors"
+            />
+          </div>
+
+          {requiresPassword && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5">
+                Session Password
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                autoFocus
+                className="w-full text-sm px-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-gray-400 transition-colors"
+              />
+            </div>
+          )}
+
+          {error && <p className="text-xs text-red-500">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={loading || !sessionId.trim()}
+            className="w-full py-3 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-gray-700 transition-colors disabled:opacity-50"
+          >
+            {loading ? "Joining..." : "Join Session"}
+          </button>
+        </form>
+
+        <div className="mt-8 text-center">
+          <button
+            onClick={() => router.push("/admin")}
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            Admin Login →
+          </button>
         </div>
-      ) : (
-        <CardGrid
-          signals={filteredSignals}
-          isShuffling={isShuffling}
-          onCardClick={setSelectedCard}
-          starredIds={userData.starredIds}
-          newCardId={newCardId}
-        />
-      )}
+      </div>
+    </div>
+  );
+}
 
-      <ShuffleOverlay
-        isActive={isShuffling}
-        cardImages={signals.map((s) => {
-          const img = s.images[0];
-          if (!img) return "";
-          if (img.thumbUrl) return img.thumbUrl;
-          const url = img.url;
-          if (url.includes("signal-images/full/")) return url.replace("/full/", "/thumbs/").replace(/\.(png|webp)$/i, ".jpg");
-          return url.replace(/^\/images\//, "/thumbs/").replace(/\.(png|jpg|jpeg|webp)$/i, ".jpg");
-        }).filter(Boolean)}
-        dealTargets={dealTargets}
-      />
-
-      <AnimatePresence>
-        {selectedCard &&
-          (isMobile ? (
-            <MobileCardDetail
-              key="mobile-detail"
-              signal={selectedCard}
-              onClose={() => setSelectedCard(null)}
-              isStarred={userData.isStarred(selectedCard.id)}
-              onToggleStar={() => userData.toggleStar(selectedCard.id)}
-              comment={userData.getComment(selectedCard.id)}
-              onCommentChange={(text) => userData.setComment(selectedCard.id, text)}
-              hasNext={filteredSignals.indexOf(selectedCard) < filteredSignals.length - 1}
-              hasPrev={filteredSignals.indexOf(selectedCard) > 0}
-              onNext={() => {
-                const idx = filteredSignals.indexOf(selectedCard);
-                if (idx < filteredSignals.length - 1) setSelectedCard(filteredSignals[idx + 1]);
-              }}
-              onPrev={() => {
-                const idx = filteredSignals.indexOf(selectedCard);
-                if (idx > 0) setSelectedCard(filteredSignals[idx - 1]);
-              }}
-            />
-          ) : (
-            <CardDetail
-              key="desktop-detail"
-              signal={selectedCard}
-              onClose={() => setSelectedCard(null)}
-              isStarred={userData.isStarred(selectedCard.id)}
-              onToggleStar={() => userData.toggleStar(selectedCard.id)}
-              comment={userData.getComment(selectedCard.id)}
-              onCommentChange={(text) => userData.setComment(selectedCard.id, text)}
-              hasNext={filteredSignals.indexOf(selectedCard) < filteredSignals.length - 1}
-              hasPrev={filteredSignals.indexOf(selectedCard) > 0}
-              onNext={() => {
-                const idx = filteredSignals.indexOf(selectedCard);
-                if (idx < filteredSignals.length - 1) setSelectedCard(filteredSignals[idx + 1]);
-              }}
-              onPrev={() => {
-                const idx = filteredSignals.indexOf(selectedCard);
-                if (idx > 0) setSelectedCard(filteredSignals[idx - 1]);
-              }}
-            />
-          ))}
-      </AnimatePresence>
-    </main>
+export default function LoginPageWrapper() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[var(--bg)]" />}>
+      <LoginPage />
+    </Suspense>
   );
 }

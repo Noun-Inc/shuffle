@@ -2,9 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, type PanInfo } from "framer-motion";
-import { X, Star, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, Star, Send, Pencil, Check, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import ImageSlideshow from "./ImageSlideshow";
-import type { Signal } from "@/data/signals";
+import type { Signal, SignalComment } from "@/data/signals";
 
 interface MobileCardDetailProps {
   signal: Signal;
@@ -17,6 +17,9 @@ interface MobileCardDetailProps {
   onPrev?: () => void;
   hasNext?: boolean;
   hasPrev?: boolean;
+  totalStars?: number;
+  allComments?: SignalComment[];
+  onDelete?: () => void;
 }
 
 export default function MobileCardDetail({
@@ -30,10 +33,22 @@ export default function MobileCardDetail({
   onPrev,
   hasNext = false,
   hasPrev = false,
+  totalStars,
+  allComments,
+  onDelete,
 }: MobileCardDetailProps) {
   const [swipeDirection, setSwipeDirection] = useState<"left" | "right" | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [draft, setDraft] = useState(comment);
+  const [saved, setSaved] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Reset draft when navigating to a different signal
+  useEffect(() => {
+    setDraft(comment);
+    setSaved(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signal.id]);
 
   const SWIPE_THRESHOLD = 50;
   const SWIPE_VELOCITY = 300;
@@ -104,20 +119,25 @@ export default function MobileCardDetail({
           style={{ touchAction: "pan-y" }}
         >
           {/* Top bar */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-100">
-            <button onClick={onToggleStar} className="p-1.5">
-              <Star
-                size={20}
-                className={
-                  isStarred
-                    ? "fill-yellow-400 text-yellow-400"
-                    : "text-gray-300"
-                }
-              />
-            </button>
+          <div className="grid grid-cols-[auto_1fr_auto] items-center p-4 border-b border-gray-100 gap-2">
+            <div className="flex items-center gap-1.5">
+              <button onClick={onToggleStar} className="p-1.5">
+                <Star
+                  size={20}
+                  className={
+                    isStarred
+                      ? "fill-yellow-400 text-yellow-400"
+                      : "text-gray-300"
+                  }
+                />
+              </button>
+              {(totalStars ?? 0) > 0 && (
+                <span className="text-xs font-semibold text-amber-500">{totalStars}</span>
+              )}
+            </div>
 
             {/* Card position indicators — always centered */}
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex items-center justify-center gap-2 text-xs">
               <button
                 onClick={hasPrev ? onPrev : undefined}
                 className={`p-1 -m-1 transition-colors ${hasPrev ? "text-gray-400 active:text-gray-600" : "text-gray-200 cursor-default"}`}
@@ -140,10 +160,12 @@ export default function MobileCardDetail({
             </button>
           </div>
 
-          {/* Image — fixed proportion of card */}
-          <div className="shrink-0 bg-gray-100" style={{ height: "35%" }}>
-            <ImageSlideshow images={signal.images} />
-          </div>
+          {/* Image — hidden when signal has no images */}
+          {signal.images.length > 0 && (
+            <div className="shrink-0 bg-gray-100" style={{ height: "35%" }}>
+              <ImageSlideshow images={signal.images} />
+            </div>
+          )}
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-5">
@@ -161,6 +183,15 @@ export default function MobileCardDetail({
             <p className="mt-3 text-sm text-gray-600 leading-relaxed">
               {signal.body}
             </p>
+            {onDelete && (
+              <button
+                onClick={() => { if (confirm("Delete this signal?")) onDelete(); }}
+                className="mt-4 flex items-center gap-1.5 text-xs text-gray-300 hover:text-red-400 transition-colors"
+              >
+                <Trash2 size={13} />
+                Delete signal
+              </button>
+            )}
           </div>
 
           {/* Swipe hint */}
@@ -192,17 +223,45 @@ export default function MobileCardDetail({
           )}
 
           {/* Bottom bar — comment input */}
-          <div className="border-t border-gray-100 p-3 flex items-center gap-2">
-            <input
-              type="text"
-              value={comment}
-              onChange={(e) => onCommentChange?.(e.target.value)}
-              placeholder="コメント"
-              className="flex-1 text-sm bg-gray-50 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
-            />
-            <button className="p-2 rounded-full hover:bg-gray-100">
-              <Pencil size={16} className="text-gray-500" />
-            </button>
+          <div className="border-t border-gray-100 p-3">
+            {allComments && allComments.length > 0 && (
+              <div className="mb-2 space-y-1.5 max-h-28 overflow-y-auto">
+                {allComments.map((c, i) => (
+                  <div key={i} className="bg-gray-50 rounded-lg px-3 py-2">
+                    <p className="text-[9px] font-medium text-gray-400">{c.displayName ?? "Anonymous"}</p>
+                    <p className="text-xs text-gray-600">{c.comment}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="relative">
+              <input
+                type="text"
+                value={draft}
+                onChange={(e) => { setDraft(e.target.value); setSaved(false); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    onCommentChange?.(draft);
+                    setSaved(true);
+                  }
+                }}
+                placeholder="Add a note..."
+                className="w-full text-sm bg-gray-50 rounded-full px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <button
+                onClick={() => { onCommentChange?.(draft); setSaved(true); }}
+                disabled={draft === comment}
+                className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 rounded-full disabled:opacity-30 transition-opacity"
+              >
+                {saved
+                  ? <Check size={14} className="text-green-500" />
+                  : comment !== "" && draft === comment
+                  ? <Pencil size={14} className="text-gray-400" />
+                  : <Send size={14} className={draft.trim() ? "text-blue-500" : "text-gray-300"} />
+                }
+              </button>
+            </div>
           </div>
         </motion.div>
       </AnimatePresence>

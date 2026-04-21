@@ -24,6 +24,14 @@ export default function ImageSlideshow({ images }: ImageSlideshowProps) {
     return () => clearInterval(timer);
   }, [images.length, paused, advance]);
 
+  if (images.length === 0) {
+    return (
+      <div className="relative w-full h-full overflow-hidden rounded-lg bg-gray-100 flex items-center justify-center">
+        <span className="text-xs text-gray-300 select-none">No image</span>
+      </div>
+    );
+  }
+
   const img = images[current];
 
   return (

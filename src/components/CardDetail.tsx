@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { X, Star, MessageSquare, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, Star, Send, Pencil, ExternalLink, ChevronLeft, ChevronRight, Trash2, Check } from "lucide-react";
 import ImageSlideshow from "./ImageSlideshow";
-import type { Signal } from "@/data/signals";
+import type { Signal, SignalComment } from "@/data/signals";
 
 interface CardDetailProps {
   signal: Signal;
@@ -17,6 +17,9 @@ interface CardDetailProps {
   onPrev?: () => void;
   hasNext?: boolean;
   hasPrev?: boolean;
+  totalStars?: number;
+  allComments?: SignalComment[];
+  onDelete?: () => void;
 }
 
 export default function CardDetail({
@@ -30,10 +33,21 @@ export default function CardDetail({
   onPrev,
   hasNext = false,
   hasPrev = false,
+  totalStars,
+  allComments,
+  onDelete,
 }: CardDetailProps) {
-  const [showMemo, setShowMemo] = useState(!!comment);
+  const [draft, setDraft] = useState(comment);
+  const [saved, setSaved] = useState(false);
   const [isLandscape, setIsLandscape] = useState(true);
   const ready = useRef(false);
+
+  // Reset draft when navigating to a different signal
+  useEffect(() => {
+    setDraft(comment);
+    setSaved(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signal.id]);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => { ready.current = true; });
@@ -82,22 +96,27 @@ export default function CardDetail({
         }`}>
           {/* Fixed header */}
           <div className="shrink-0 px-5 pt-5 pb-2">
-            <div className="flex items-center justify-between mb-3">
-              <button
-                onClick={onToggleStar}
-                className="p-1.5 rounded-full hover:bg-yellow-50 transition-colors"
-              >
-                <Star
-                  size={18}
-                  className={
-                    isStarred
-                      ? "fill-yellow-400 text-yellow-400"
-                      : "text-gray-300"
-                  }
-                />
-              </button>
+            <div className="grid grid-cols-[auto_1fr_auto] items-center mb-3 gap-2">
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={onToggleStar}
+                  className="p-1.5 rounded-full hover:bg-yellow-50 transition-colors"
+                >
+                  <Star
+                    size={18}
+                    className={
+                      isStarred
+                        ? "fill-yellow-400 text-yellow-400"
+                        : "text-gray-300"
+                    }
+                  />
+                </button>
+                {(totalStars ?? 0) > 0 && (
+                  <span className="text-xs font-semibold text-amber-500">{totalStars}</span>
+                )}
+              </div>
 
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex items-center justify-center gap-2">
                 <button
                   onClick={hasPrev ? onPrev : undefined}
                   className={`p-1 rounded-full transition-colors ${hasPrev ? "text-gray-400 hover:bg-gray-100 hover:text-gray-600" : "text-gray-200 cursor-default"}`}
@@ -157,44 +176,62 @@ export default function CardDetail({
 
             {/* Memo section */}
             <div className="mt-4 border-t border-gray-100 pt-3">
-              <button
-                onClick={() => setShowMemo(!showMemo)}
-                className={`flex items-center gap-2 text-xs transition-colors ${
-                  comment
-                    ? "text-blue-600 hover:text-blue-700"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                <MessageSquare size={13} fill={comment ? "currentColor" : "none"} />
-                {comment ? "View memo" : "Add memo"}
-              </button>
-              {showMemo && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  className="mt-2"
+              {allComments && allComments.length > 0 && (
+                <div className="mb-3 space-y-2">
+                  {allComments.map((c, i) => (
+                    <div key={i} className="bg-gray-50 rounded-lg p-2.5">
+                      <p className="text-[10px] font-medium text-gray-400 mb-0.5">
+                        {c.displayName ?? "Anonymous"}
+                      </p>
+                      <p className="text-xs text-gray-600">{c.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="relative">
+                <textarea
+                  value={draft}
+                  onChange={(e) => { setDraft(e.target.value); setSaved(false); }}
+                  placeholder="Write a note about this signal..."
+                  className="w-full text-sm border border-gray-200 rounded-lg p-2.5 pr-9 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                  rows={2}
+                />
+                <button
+                  onClick={() => { onCommentChange?.(draft); setSaved(true); }}
+                  disabled={draft === comment}
+                  className="absolute bottom-2 right-2 p-1 rounded transition-colors disabled:opacity-30"
                 >
-                  <textarea
-                    value={comment}
-                    onChange={(e) => onCommentChange?.(e.target.value)}
-                    placeholder="Write a note about this signal..."
-                    className="w-full text-sm border border-gray-200 rounded-lg p-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
-                    rows={2}
-                  />
-                </motion.div>
+                  {saved
+                    ? <Check size={14} className="text-green-500" />
+                    : comment !== "" && draft === comment
+                    ? <Pencil size={14} className="text-gray-400" />
+                    : <Send size={14} className={draft.trim() ? "text-blue-500" : "text-gray-300"} />
+                  }
+                </button>
+              </div>
+              {onDelete && (
+                <button
+                  onClick={() => { if (confirm("Delete this signal?")) onDelete(); }}
+                  className="mt-3 flex items-center gap-1.5 text-xs text-gray-300 hover:text-red-400 transition-colors"
+                >
+                  <Trash2 size={13} />
+                  Delete signal
+                </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Image section */}
-        <div className={`bg-gray-100 ${
-          isLandscape
-            ? "w-1/2 h-full"
-            : "order-1 w-full shrink-0"
-        }`} style={!isLandscape ? { height: "40%" } : undefined}>
-          <ImageSlideshow images={signal.images} />
-        </div>
+        {/* Image section — hidden when signal has no images */}
+        {signal.images.length > 0 && (
+          <div className={`bg-gray-100 ${
+            isLandscape
+              ? "w-1/2 h-full"
+              : "order-1 w-full shrink-0"
+          }`} style={!isLandscape ? { height: "40%" } : undefined}>
+            <ImageSlideshow images={signal.images} />
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );

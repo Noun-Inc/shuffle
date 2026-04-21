@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { DealTarget } from "@/app/page";
+import type { DealTarget } from "@/app/session/[id]/page";
 
 interface ShuffleOverlayProps {
   isActive: boolean;
