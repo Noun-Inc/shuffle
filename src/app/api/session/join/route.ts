@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
+import {
+  checkPasswordRateLimit,
+  recordFailedAttempt,
+  clearFailedAttempts,
+  getRequestIdentifier,
+} from "@/lib/rateLimiter";
 
 export async function POST(req: NextRequest) {
   const { sessionId, password, displayName } = await req.json();
@@ -30,9 +36,26 @@ export async function POST(req: NextRequest) {
   }
 
   if (session.allow_add_signals) {
-    if (!password || password !== session.join_password) {
-      return NextResponse.json({ error: "Invalid password" }, { status: 403 });
+    const identifier = getRequestIdentifier(req);
+
+    const { locked, remainingSeconds } = await checkPasswordRateLimit(sessionId, identifier);
+    if (locked) {
+      const minutes = Math.ceil(remainingSeconds! / 60);
+      return NextResponse.json(
+        { error: `Too many failed attempts. Try again in ${minutes} minute${minutes !== 1 ? "s" : ""}.` },
+        { status: 429 }
+      );
     }
+
+    if (!password || password !== session.join_password) {
+      const { attemptsLeft } = await recordFailedAttempt(sessionId, identifier);
+      const message = attemptsLeft > 0
+        ? `Invalid password. ${attemptsLeft} attempt${attemptsLeft !== 1 ? "s" : ""} remaining.`
+        : "Invalid password. You have been locked out for 15 minutes.";
+      return NextResponse.json({ error: message }, { status: 403 });
+    }
+
+    await clearFailedAttempts(sessionId, identifier);
   }
 
   // Return existing participant if this device already joined

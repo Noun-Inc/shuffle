@@ -217,7 +217,7 @@ export default function SessionPage() {
                 sessionData.setComment(String(selectedCard.id), text)
               }
               allComments={sessionData.getOtherComments(String(selectedCard.id))}
-              onDelete={session?.allowAddSignals && selectedCard.isParticipantSignal ? () => {
+              onDelete={session?.allowAddSignals ? () => {
                 sessionData.deleteSignal(String(selectedCard.id));
                 setSelectedCard(null);
               } : undefined}
@@ -245,7 +245,7 @@ export default function SessionPage() {
                 sessionData.setComment(String(selectedCard.id), text)
               }
               allComments={sessionData.getOtherComments(String(selectedCard.id))}
-              onDelete={session?.allowAddSignals && selectedCard.isParticipantSignal ? () => {
+              onDelete={session?.allowAddSignals ? () => {
                 sessionData.deleteSignal(String(selectedCard.id));
                 setSelectedCard(null);
               } : undefined}

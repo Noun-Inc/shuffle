@@ -90,6 +90,62 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to create session" }, { status: 500 });
   }
 
+  // Duplicate all published deck signals into the session for isolation
+  const { data: deckSignals } = await supabase
+    .from("signals")
+    .select("*, signal_images(*)")
+    .eq("deck_id", deckId)
+    .eq("status", "published")
+    .order("number");
+
+  if (deckSignals && deckSignals.length > 0) {
+    // Pre-assign UUIDs so we can map them to signal_images
+    const signalInserts = deckSignals.map((sig) => ({
+      id: crypto.randomUUID(),
+      session_id: session.id,
+      deck_id: null,
+      number: sig.number,
+      title: sig.title,
+      body: sig.body,
+      category: sig.category,
+      tags: sig.tags,
+      year: sig.year,
+      reference: sig.reference,
+      focal_hint: sig.focal_hint,
+      status: "published" as const,
+      sort_order: sig.sort_order,
+      // is_participant_added omitted — relies on DB default (false)
+    }));
+
+    const { error: signalsError } = await supabase.from("signals").insert(signalInserts);
+    if (signalsError) {
+      // Roll back session on signal copy failure
+      await supabase.from("sessions").delete().eq("id", session.id);
+      return NextResponse.json({ error: "Failed to copy deck signals", detail: signalsError.message }, { status: 500 });
+    }
+
+    // Duplicate signal_images rows pointing to the same URLs
+    type RawImage = { url: string; thumb_url: string | null; alt: string | null; source: string | null; source_label: string | null; sort_order: number };
+    const imageInserts: object[] = [];
+    for (let i = 0; i < deckSignals.length; i++) {
+      const newSignalId = signalInserts[i].id;
+      for (const img of ((deckSignals[i].signal_images as RawImage[]) || [])) {
+        imageInserts.push({
+          signal_id: newSignalId,
+          url: img.url,
+          thumb_url: img.thumb_url,
+          alt: img.alt,
+          source: img.source,
+          source_label: img.source_label,
+          sort_order: img.sort_order,
+        });
+      }
+    }
+    if (imageInserts.length > 0) {
+      await supabase.from("signal_images").insert(imageInserts);
+    }
+  }
+
   return NextResponse.json(
     {
       session: {

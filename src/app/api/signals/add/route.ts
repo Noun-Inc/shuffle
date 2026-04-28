@@ -51,12 +51,13 @@ export async function POST(req: NextRequest) {
       year: year || new Date().getFullYear(),
       reference: reference || null,
       status: "published",
+      is_participant_added: true,
     })
     .select()
     .single();
 
   if (error || !signal) {
-    return NextResponse.json({ error: "Failed to create signal" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create signal", detail: error?.message }, { status: 500 });
   }
 
   if (images?.length > 0) {

@@ -28,7 +28,7 @@ export async function GET(
 
   const { data: session } = await supabase
     .from("sessions")
-    .select("id, title, expires_at, allow_add_signals, deck_id")
+    .select("id, title, expires_at, allow_add_signals")
     .eq("id", sessionId)
     .single();
 
@@ -40,29 +40,26 @@ export async function GET(
     return NextResponse.json({ error: "Session has expired" }, { status: 410 });
   }
 
-  // Fetch signals: deck originals + participant-added signals for this session
-  const [{ data: deckSignalRows }, { data: sessionSignalRows }] = await Promise.all([
-    supabase
-      .from("signals")
-      .select("*, signal_images(*)")
-      .eq("deck_id", (session as unknown as { deck_id: string }).deck_id)
-      .eq("status", "published")
-      .order("number"),
-    supabase
-      .from("signals")
-      .select("*, signal_images(*)")
-      .eq("session_id", sessionId)
-      .eq("status", "published")
-      .order("created_at"), // participant signals: ordered by insertion time
-  ]);
+  // All signals for this session (deck copies + participant-added)
+  const { data: allSignalRows } = await supabase
+    .from("signals")
+    .select("*, signal_images(*)")
+    .eq("session_id", sessionId)
+    .eq("status", "published");
 
-  // Assign display numbers to participant signals starting after the highest deck number
-  const deckRows = deckSignalRows || [];
-  const sessionRows = sessionSignalRows || [];
+  const rows = allSignalRows || [];
+  // Deck copies keep their original numbers; participant-added signals get numbers assigned below
+  const deckRows = rows
+    .filter((r) => !r.is_participant_added)
+    .sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+  const participantRows = rows
+    .filter((r) => r.is_participant_added)
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
   const deckMaxNumber = deckRows.reduce((max, r) => Math.max(max, r.number ?? 0), 0);
-  const numberedSessionRows = sessionRows.map((r, i) => ({ ...r, number: deckMaxNumber + i + 1 }));
+  const numberedParticipantRows = participantRows.map((r, i) => ({ ...r, number: deckMaxNumber + i + 1 }));
 
-  const signalRows = [...deckRows, ...numberedSessionRows];
+  const signalRows = [...deckRows, ...numberedParticipantRows];
 
   // Fetch all stars for this session
   const { data: stars } = await supabase
@@ -114,7 +111,7 @@ export async function GET(
     year: row.year,
     reference: row.reference || undefined,
     focalHint: row.focal_hint || undefined,
-    isParticipantSignal: row.session_id != null,
+    isParticipantSignal: row.is_participant_added,
     images: ((row.signal_images as Array<{
       url: string; thumb_url: string | null; alt: string | null;
       source: string | null; source_label: string | null; sort_order: number;

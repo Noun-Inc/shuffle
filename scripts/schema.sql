@@ -46,6 +46,7 @@ create table if not exists signals (
   reference text,
   focal_hint text,
   status text not null default 'draft' check (status in ('draft', 'published')),
+  is_participant_added boolean not null default false,
   sort_order int default 0,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -63,6 +64,20 @@ create table if not exists signal_images (
   sort_order int default 0,
   created_at timestamptz default now()
 );
+
+-- Password rate-limiting: track failed attempts per session + IP
+create table if not exists password_attempts (
+  session_id uuid not null references sessions(id) on delete cascade,
+  identifier text not null,   -- IP address of the requester
+  failed_attempts int not null default 0,
+  locked_until timestamptz,   -- null = not locked
+  updated_at timestamptz default now(),
+  primary key (session_id, identifier)
+);
+
+alter table password_attempts enable row level security;
+
+create index if not exists idx_password_attempts_session on password_attempts(session_id);
 
 -- Participants: new table
 create table if not exists participants (
@@ -112,6 +127,10 @@ alter table signals
 -- Make number nullable (participant-added signals have no canonical number)
 alter table signals
   alter column number drop not null;
+
+-- Add is_participant_added column (false = deck copy, true = participant-added during session)
+alter table signals
+  add column if not exists is_participant_added boolean not null default false;
 
 -- Add the scope constraint if it doesn't already exist
 do $$
@@ -228,5 +247,5 @@ create policy "Public can read signal images for published deck signals" on sign
     )
   );
 
--- sessions, participants, session_stars, session_comments: no anon access
+-- sessions, participants, session_stars, session_comments, password_attempts: no anon access
 -- (service role in API routes has full access — RLS is bypassed by service role key)
